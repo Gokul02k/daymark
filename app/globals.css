@@ -170,14 +170,17 @@ h2 {
 
 .unlock { display: flex; gap: 0.5rem; margin: 0.5rem 0 0; }
 .unlock input {
-  flex: 1;
-  min-width: 0;
+  width: 8.5rem;
   min-height: 44px;
-  padding: 0.5rem 0.8rem;
+  padding: 0.4rem 0.6rem;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--panel);
+  font-size: 1.25rem;
+  letter-spacing: 0.45em;
+  text-align: center;
 }
+.unlock button:disabled { opacity: 0.45; }
 .unlock button {
   min-height: 44px;
   padding: 0 0.9rem;
@@ -294,6 +297,8 @@ h2 {
 .remind input { width: 1.2rem; height: 1.2rem; accent-color: var(--ok); }
 .remind.off { opacity: 0.5; }
 .remindbox { display: flex; flex-direction: column; gap: 0.2rem; }
+.remindrow { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; min-height: 44px; }
+.timefield { min-height: 40px; padding: 0.3rem 0.6rem; color-scheme: dark; }
 .note { margin: 0; color: var(--muted); font-size: 0.85rem; }
 
 .pmark { font-weight: 800; margin-right: 0.35rem; }

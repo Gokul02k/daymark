@@ -10,7 +10,7 @@ function kvConfig() {
   return { url: url.replace(/\/$/, ''), token };
 }
 
-async function kvCommand(command) {
+export async function kvCommand(command) {
   const kv = kvConfig();
   const res = await fetch(kv.url, {
     method: 'POST',

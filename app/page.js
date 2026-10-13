@@ -6,6 +6,8 @@ import {
   addTask,
   childrenOf,
   cleanTitle,
+  DEFAULT_REMIND_AT,
+  defaultRemindAt,
   deleteList,
   deleteTask,
   doneTasks,
@@ -13,6 +15,7 @@ import {
   groupOpenTasks,
   mergeBoards,
   normalizeBoard,
+  reminderKey,
   reminderMessage,
   remindersDue,
   reorderTasks,
@@ -56,17 +59,15 @@ const PRIORITY_CHOICES = [
 
 const PRIORITY_MARK = { low: '!', medium: '!!', high: '!!!' };
 
-const REMIND_NOTE = {
-  push: 'Arrives around 9 AM, even when Daymark is closed.',
-  open: 'Arrives at 9 AM if Daymark is open, otherwise the next time you open it.',
-};
-
 const STATUS_TEXT = {
   synced: 'Synced',
   device: 'On this device',
-  locked: 'Enter your passcode to sync',
-  unset: 'On this device. Set DAYMARK_PASSCODE in Vercel to sync.',
+  locked: 'Enter your 4-digit passcode to sync',
+  throttled: 'Too many wrong passcodes. Try again in 15 minutes.',
+  unset: 'On this device. Set a 4-digit DAYMARK_PASSCODE in Vercel to sync.',
 };
+
+const POLL_MS = 15 * 1000;
 
 export default function HomePage() {
   const [state, setState] = useState(null);
@@ -127,11 +128,11 @@ export default function HomePage() {
     const board = stateRef.current;
     if (!board || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const today = todayKey();
-    const due = remindersDue(board, today);
+    const due = remindersDue(board, Date.now(), localZone());
     if (due.length === 0) return;
     notify(reminderMessage(due, today));
     let next = board;
-    for (const task of due) next = updateTask(next, task.id, { remindedOn: task.dueAt });
+    for (const task of due) next = updateTask(next, task.id, { remindedOn: reminderKey(task) });
     apply(next);
   }
 
@@ -169,9 +170,9 @@ export default function HomePage() {
       if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
       const res = await api('/api/push', {
         method: 'POST',
-        body: { subscription: sub.toJSON(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        body: { subscription: sub.toJSON(), timeZone: localZone() },
       });
-      setPushState(res.ok ? 'on' : 'off');
+      setPushState(res.ok ? (info.exact ? 'exact' : 'daily') : 'off');
     } catch {
       setPushState('off');
     }
@@ -200,6 +201,7 @@ export default function HomePage() {
         if (cancel) return 'device';
         if (!data.synced) {
           const mode = modeFor(data.reason);
+          if (mode === 'locked' && loadPasscode()) savePasscode('');
           setSyncMode(mode);
           return mode;
         }
@@ -220,14 +222,21 @@ export default function HomePage() {
     }
     pullRef.current = pull;
     pull();
-    const timer = setInterval(pull, 8000);
-    const reminderTimer = setInterval(() => checkReminders(), 60 * 1000);
-    window.addEventListener('focus', pull);
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') pull();
+    }, POLL_MS);
+    const reminderTimer = setInterval(() => checkReminders(), 30 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      pull();
+      checkReminders();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancel = true;
       clearInterval(timer);
       clearInterval(reminderTimer);
-      window.removeEventListener('focus', pull);
+      document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('beforeinstallprompt', onPrompt);
     };
   }, []);
@@ -263,7 +272,7 @@ export default function HomePage() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     setEditing(null);
     setRemindHint('');
-    setSheet({ title, kind: 'none', date: '', remind: false, priority: 'none' });
+    setSheet({ title, kind: 'none', date: '', remind: false, remindAt: DEFAULT_REMIND_AT, priority: 'none' });
   }
 
   function confirmSheet(event) {
@@ -276,6 +285,8 @@ export default function HomePage() {
       title: sheet.title,
       dueAt,
       remind: sheet.remind,
+      remindAt: sheet.remindAt,
+      remindTz: localZone(),
       priority: sheet.priority,
     });
     if (next === state) return;
@@ -324,6 +335,7 @@ export default function HomePage() {
       title: task.title,
       ...dueChoice(task.dueAt, todayKey()),
       remind: Boolean(task.remind),
+      remindAt: task.remindAt,
       priority: task.priority,
     });
     setRemindHint('');
@@ -341,7 +353,7 @@ export default function HomePage() {
     if (Notification.permission === 'default') await Notification.requestPermission();
     if (Notification.permission === 'granted') {
       setRemindHint('');
-      if (pushInfo.current?.enabled && pushState !== 'on') ensurePush();
+      if (pushInfo.current?.enabled && pushState !== 'exact' && pushState !== 'daily') ensurePush();
       return true;
     }
     setRemindHint('Notifications are blocked for Daymark. Allow them in your browser settings to get reminders.');
@@ -365,6 +377,8 @@ export default function HomePage() {
       title: draft.title,
       dueAt,
       remind: draft.remind,
+      remindAt: draft.remindAt,
+      remindTz: draft.remind ? localZone() : undefined,
       priority: draft.priority,
     });
     if (next === state) return;
@@ -412,13 +426,18 @@ export default function HomePage() {
     handle.addEventListener('pointerup', onUp);
   }
 
-  async function onUnlock(event) {
-    event.preventDefault();
-    savePasscode(passInput.trim());
+  async function unlockWith(code) {
+    savePasscode(code);
     setPassHint('');
+    setPassInput('');
     const mode = await pullRef.current?.();
     if (mode === 'locked') setPassHint("That passcode didn't match.");
-    else setPassInput('');
+  }
+
+  function onPassInput(value) {
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    setPassInput(digits);
+    if (digits.length === 4) unlockWith(digits);
   }
 
   async function onInstall() {
@@ -435,9 +454,18 @@ export default function HomePage() {
   const groups = groupOpenTasks(state, listId, today);
   const done = doneTasks(state, listId);
   const openCount = state.tasks.filter((task) => task.listId === listId && !task.done).length;
-  const remindDraft = (on) => toggleRemind(on, (value) => setDraft((current) => current && { ...current, remind: value }));
-  const remindSheet = (on) => toggleRemind(on, (value) => setSheet((current) => current && { ...current, remind: value }));
-  const remindNote = pushState === 'on' ? REMIND_NOTE.push : REMIND_NOTE.open;
+  const remindTo = (setter) => (on) =>
+    toggleRemind(on, (value) =>
+      setter((current) =>
+        current && {
+          ...current,
+          remind: value,
+          remindAt: value ? defaultRemindAt(resolveDue(current, todayKey())) : current.remindAt,
+        },
+      ),
+    );
+  const remindDraft = remindTo(setDraft);
+  const remindSheet = remindTo(setSheet);
 
   function show(tasks) {
     if (!dragOrder || !tasks.every((task) => dragOrder.includes(task.id))) return tasks;
@@ -463,16 +491,27 @@ export default function HomePage() {
       </header>
       <p className={syncMode === 'synced' ? 'status up' : 'status'}>{STATUS_TEXT[syncMode]}</p>
       {syncMode === 'locked' ? (
-        <form className="unlock" onSubmit={onUnlock}>
+        <form
+          className="unlock"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (passInput.length === 4) unlockWith(passInput);
+          }}
+        >
           <input
             type="password"
+            inputMode="numeric"
+            pattern="[0-9]{4}"
+            maxLength={4}
             value={passInput}
-            onChange={(event) => setPassInput(event.target.value)}
-            placeholder="Passcode"
-            aria-label="Passcode"
-            autoComplete="current-password"
+            onChange={(event) => onPassInput(event.target.value)}
+            placeholder="••••"
+            aria-label="4-digit passcode"
+            autoComplete="off"
           />
-          <button type="submit">Unlock</button>
+          <button type="submit" disabled={passInput.length !== 4}>
+            Unlock
+          </button>
         </form>
       ) : null}
       {passHint ? <p className="hint tight">{passHint}</p> : null}
@@ -541,7 +580,7 @@ export default function HomePage() {
                   stepFor={stepFor}
                   stepTitle={stepTitle}
                   remindHint={remindHint}
-                  remindNote={remindNote}
+                  pushState={pushState}
                   dragOrder={dragOrder}
                   onToggle={() => apply(setDone(state, task.id, !task.done))}
                   onDelete={() => onDeleteTask(task.id)}
@@ -584,7 +623,7 @@ export default function HomePage() {
                 stepFor={stepFor}
                 stepTitle={stepTitle}
                 remindHint={remindHint}
-                remindNote={remindNote}
+                pushState={pushState}
                 dragOrder={dragOrder}
                 onToggle={() => apply(setDone(state, task.id, false))}
                 onDelete={() => onDeleteTask(task.id)}
@@ -623,7 +662,7 @@ export default function HomePage() {
           listName={currentList ? currentList.name : 'Inbox'}
           today={today}
           remindHint={remindHint}
-          remindNote={remindNote}
+          pushState={pushState}
           onChange={setSheet}
           onRemind={remindSheet}
           onCancel={() => setSheet(null)}
@@ -634,7 +673,7 @@ export default function HomePage() {
   );
 }
 
-function AddSheet({ sheet, listName, today, remindHint, remindNote, onChange, onRemind, onCancel, onConfirm }) {
+function AddSheet({ sheet, listName, today, remindHint, pushState, onChange, onRemind, onCancel, onConfirm }) {
   const ref = useRef(null);
   useEffect(() => {
     ref.current?.focus();
@@ -673,7 +712,14 @@ function AddSheet({ sheet, listName, today, remindHint, remindNote, onChange, on
           min={today}
           onChange={(choice) => onChange({ ...sheet, ...choice, remind: choice.kind === 'none' ? false : sheet.remind })}
         />
-        <RemindToggle on={sheet.remind} disabled={!dueAt} note={remindNote} onToggle={onRemind} />
+        <RemindToggle
+          on={sheet.remind}
+          disabled={!dueAt}
+          time={sheet.remindAt}
+          pushState={pushState}
+          onToggle={onRemind}
+          onTime={(remindAt) => onChange({ ...sheet, remindAt })}
+        />
         {remindHint ? <p className="hint tight">{remindHint}</p> : null}
         <p className="label">Priority</p>
         <PriorityPicker value={sheet.priority} onChange={(priority) => onChange({ ...sheet, priority })} />
@@ -743,23 +789,50 @@ function PriorityPicker({ value, onChange }) {
   );
 }
 
-function RemindToggle({ on, disabled, note, onToggle }) {
+function RemindToggle({ on, disabled, time, pushState, onToggle, onTime }) {
   const checked = Boolean(on) && !disabled;
   return (
     <div className="remindbox">
-      <label className={disabled ? 'remind off' : 'remind'}>
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          onChange={(event) => onToggle(event.target.checked)}
-        />
-        Remind me
-      </label>
+      <div className="remindrow">
+        <label className={disabled ? 'remind off' : 'remind'}>
+          <input
+            type="checkbox"
+            checked={checked}
+            disabled={disabled}
+            onChange={(event) => onToggle(event.target.checked)}
+          />
+          Remind me
+        </label>
+        {checked ? (
+          <input
+            type="time"
+            className="field timefield"
+            value={time}
+            onChange={(event) => {
+              if (event.target.value) onTime(event.target.value);
+            }}
+            aria-label="Reminder time"
+          />
+        ) : null}
+      </div>
       {disabled ? <p className="note">Choose a day to turn this on.</p> : null}
-      {checked ? <p className="note">{note}</p> : null}
+      {checked ? <p className="note">{reminderNote(pushState, time)}</p> : null}
     </div>
   );
+}
+
+function reminderNote(pushState, time) {
+  const at = clockLabel(time);
+  if (pushState === 'exact') return `Arrives at ${at}, even when Daymark is closed.`;
+  if (pushState === 'daily') {
+    return `Arrives at ${at} while Daymark is open. When it is closed, it comes in the reminder around 9 AM.`;
+  }
+  return `Arrives at ${at} if Daymark is open, otherwise the next time you open it.`;
+}
+
+function clockLabel(time) {
+  const [hour, minute] = time.split(':').map(Number);
+  return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 function TaskBlock(props) {
@@ -817,7 +890,7 @@ function TaskRow({
   editing,
   draft,
   remindHint,
-  remindNote,
+  pushState,
   dragOrder,
   child,
   onToggle,
@@ -867,8 +940,10 @@ function TaskRow({
                 <RemindToggle
                   on={draft.remind}
                   disabled={!resolveDue(draft, today)}
-                  note={remindNote}
+                  time={draft.remindAt}
+                  pushState={pushState}
                   onToggle={onRemind}
+                  onTime={(remindAt) => onDraft({ ...draft, remindAt })}
                 />
                 <PriorityPicker value={draft.priority} onChange={(priority) => onDraft({ ...draft, priority })} />
               </>
@@ -911,7 +986,7 @@ function rowMeta(task, today, done) {
   if (done) return { text: '', late: false };
   const parts = [];
   if (task.dueAt && task.dueAt !== today) parts.push(shortDate(task.dueAt));
-  if (task.remind) parts.push('Reminder on');
+  if (task.remind) parts.push(`Reminder ${clockLabel(task.remindAt)}`);
   return { text: parts.join(' · '), late: Boolean(task.dueAt) && task.dueAt < today };
 }
 
@@ -941,8 +1016,15 @@ function notify({ title, body, tag }) {
     .catch(direct);
 }
 
+function localZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 function api(path, { method = 'GET', body } = {}) {
-  const headers = { 'x-daymark-passcode': encodeURIComponent(loadPasscode()) };
+  const headers = {
+    'x-daymark-passcode': encodeURIComponent(loadPasscode()),
+    'x-daymark-zone': localZone(),
+  };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   return fetch(path, {
     method,
@@ -953,7 +1035,7 @@ function api(path, { method = 'GET', body } = {}) {
 }
 
 function modeFor(reason) {
-  if (reason === 'locked' || reason === 'unset') return reason;
+  if (reason === 'locked' || reason === 'unset' || reason === 'throttled') return reason;
   return 'device';
 }
 

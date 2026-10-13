@@ -5,13 +5,18 @@ import {
   addTask,
   deleteList,
   dayInZone,
+  defaultRemindAt,
   deleteTask,
   dueChoice,
   emptyBoard,
   groupOpenTasks,
   mergeBoards,
+  normalizeBoard,
+  reminderInstant,
+  reminderKey,
   reminderMessage,
   remindersDue,
+  remindersForDay,
   resolveDue,
   shiftDay,
   reorderTasks,
@@ -79,14 +84,52 @@ test('due choices resolve to a day, or to no date limit', () => {
   assert.deepEqual(dueChoice('2026-12-01', today), { kind: 'pick', date: '2026-12-01' });
 });
 
-test('a reminder fires from 9 AM on its day, once', () => {
-  let board = addTask(emptyBoard(), { title: 'Pay rent', dueAt: '2026-10-13', remind: true });
+test('a reminder fires at its time where it was set, once, and again after a new time', () => {
+  let board = addTask(emptyBoard(), {
+    title: 'Pay rent',
+    dueAt: '2026-10-13',
+    remind: true,
+    remindAt: '18:30',
+    remindTz: 'Asia/Kolkata',
+  });
   board = addTask(board, { title: 'No reminder', dueAt: '2026-10-13' });
-  assert.equal(remindersDue(board, '2026-10-13', 8).length, 0);
-  assert.deepEqual(remindersDue(board, '2026-10-13', 9).map((task) => task.title), ['Pay rent']);
-  assert.equal(remindersDue(board, '2026-10-14', 0).length, 1);
-  board = updateTask(board, board.tasks[0].id, { remindedOn: '2026-10-13' });
-  assert.equal(remindersDue(board, '2026-10-13', 10).length, 0);
+  const [task] = board.tasks;
+  assert.equal(reminderInstant(task), Date.parse('2026-10-13T13:00:00Z'));
+  assert.equal(remindersDue(board, Date.parse('2026-10-13T12:59:00Z')).length, 0);
+  assert.deepEqual(remindersDue(board, Date.parse('2026-10-13T13:00:00Z')).map((item) => item.title), ['Pay rent']);
+
+  board = updateTask(board, task.id, { remindedOn: reminderKey(task) });
+  assert.equal(remindersDue(board, Date.parse('2026-10-14T00:00:00Z')).length, 0);
+
+  board = updateTask(board, task.id, { remindAt: '20:00' });
+  assert.equal(remindersDue(board, Date.parse('2026-10-13T14:29:00Z')).length, 0);
+  assert.equal(remindersDue(board, Date.parse('2026-10-13T14:30:00Z')).length, 1);
+});
+
+test('a reminder without a zone uses the one it is checked in', () => {
+  const board = addTask(emptyBoard(), { title: 'Call', dueAt: '2026-03-08', remind: true, remindAt: '09:00' });
+  assert.equal(reminderInstant(board.tasks[0], 'America/New_York'), Date.parse('2026-03-08T13:00:00Z'));
+  assert.equal(reminderInstant(board.tasks[0], 'Asia/Kolkata'), Date.parse('2026-03-08T03:30:00Z'));
+});
+
+test('the morning job collects the whole day, and old sends stay sent', () => {
+  let board = addTask(emptyBoard(), { title: 'Later today', dueAt: '2026-10-13', remind: true, remindAt: '21:00' });
+  board = addTask(board, { title: 'Tomorrow', dueAt: '2026-10-14', remind: true });
+  assert.deepEqual(remindersForDay(board, '2026-10-13').map((task) => task.title), ['Later today']);
+
+  const old = normalizeBoard({
+    tasks: [{ id: 'a', title: 'Old', dueAt: '2026-10-13', remind: true, remindedOn: '2026-10-13' }],
+  });
+  assert.equal(old.tasks[0].remindedOn, '2026-10-13 09:00');
+  assert.equal(remindersForDay(old, '2026-10-13').length, 0);
+});
+
+test('the suggested time is 9 AM, or the next hour once 9 AM has passed today', () => {
+  const afternoon = new Date(2026, 9, 13, 16, 5);
+  assert.equal(defaultRemindAt('2026-10-13', afternoon), '17:00');
+  assert.equal(defaultRemindAt('2026-10-14', afternoon), '09:00');
+  assert.equal(defaultRemindAt('2026-10-13', new Date(2026, 9, 13, 8, 0)), '09:00');
+  assert.equal(defaultRemindAt(null, afternoon), '09:00');
 });
 
 test('the daily job reads the day where each phone is', () => {

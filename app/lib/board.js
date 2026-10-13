@@ -28,6 +28,27 @@ export function cleanPriority(value) {
   return PRIORITIES.includes(value) ? value : 'none';
 }
 
+export const DEFAULT_REMIND_AT = '09:00';
+
+export function cleanTime(value) {
+  return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
+}
+
+export function validZone(value) {
+  if (typeof value !== 'string' || !value || value.length > 64) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: value }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+function sentKey(task) {
+  if (!task.remindedOn) return null;
+  const at = cleanTime(task.remindAt) || DEFAULT_REMIND_AT;
+  return task.remindedOn === task.dueAt ? `${task.dueAt} ${at}` : String(task.remindedOn);
+}
+
 export function emptyBoard() {
   return {
     lists: [{ id: 'inbox', name: 'Inbox', createdAt: new Date().toISOString(), updatedAt: new Date(0).toISOString() }],
@@ -63,7 +84,9 @@ export function normalizeBoard(raw) {
       dueAt: cleanDue(task.dueAt),
       priority: cleanPriority(task.priority),
       remind: Boolean(task.remind) && Boolean(cleanDue(task.dueAt)),
-      remindedOn: task.remindedOn || null,
+      remindAt: cleanTime(task.remindAt) || DEFAULT_REMIND_AT,
+      remindTz: validZone(task.remindTz),
+      remindedOn: sentKey(task),
       position: Number.isFinite(task.position) ? task.position : index,
       createdAt: task.createdAt || new Date().toISOString(),
       updatedAt: task.updatedAt || task.createdAt || new Date(0).toISOString(),
@@ -162,7 +185,16 @@ export function restoreList(board, removed) {
 
 export function addTask(
   board,
-  { listId = 'inbox', title, dueAt = null, parentId = null, remind = false, priority = 'none' } = {},
+  {
+    listId = 'inbox',
+    title,
+    dueAt = null,
+    parentId = null,
+    remind = false,
+    remindAt = DEFAULT_REMIND_AT,
+    remindTz = null,
+    priority = 'none',
+  } = {},
 ) {
   const text = cleanTitle(title);
   if (!text) return board;
@@ -185,6 +217,8 @@ export function addTask(
     dueAt: due,
     priority: parent ? 'none' : cleanPriority(priority),
     remind: Boolean(remind) && Boolean(due),
+    remindAt: cleanTime(remindAt) || DEFAULT_REMIND_AT,
+    remindTz: validZone(remindTz),
     remindedOn: null,
     position: nextPosition(board.tasks, list, parent),
     createdAt,
@@ -204,14 +238,15 @@ export function updateTask(board, id, patch) {
       if (task.id !== id) return task;
       const nextDue = due === undefined ? task.dueAt : due;
       const nextRemind = patch.remind === undefined ? task.remind : Boolean(patch.remind);
-      const dueChanged = due !== undefined && nextDue !== task.dueAt;
       return {
         ...task,
         title: title === undefined ? task.title : title,
         dueAt: nextDue,
         priority: patch.priority === undefined ? task.priority : cleanPriority(patch.priority),
         remind: nextRemind && Boolean(nextDue),
-        remindedOn: patch.remindedOn !== undefined ? patch.remindedOn : dueChanged ? null : task.remindedOn,
+        remindAt: cleanTime(patch.remindAt) || task.remindAt,
+        remindTz: patch.remindTz === undefined ? task.remindTz : validZone(patch.remindTz),
+        remindedOn: patch.remindedOn === undefined ? task.remindedOn : patch.remindedOn,
         updatedAt: stamp(),
       };
     }),
@@ -367,8 +402,6 @@ export function doneTasks(board, listId) {
     .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
 }
 
-export const REMIND_HOUR = 9;
-
 export function shiftDay(key, days) {
   const [year, month, day] = key.split('-').map(Number);
   return todayKey(new Date(year, month - 1, day + days));
@@ -416,9 +449,55 @@ export function reminderMessage(due, today = todayKey()) {
   return { title: 'Daymark', body: `${tasks.length} tasks due: ${names}${more}`, tag: 'daymark-reminder' };
 }
 
-export function remindersDue(board, today = todayKey(), hour = new Date().getHours()) {
-  return board.tasks.filter((task) => {
-    if (!task.remind || task.done || !task.dueAt || task.remindedOn === task.dueAt) return false;
-    return task.dueAt < today || (task.dueAt === today && hour >= REMIND_HOUR);
-  });
+/** Changes whenever the day or time does, so an edited reminder fires again. */
+export function reminderKey(task) {
+  return `${task.dueAt} ${task.remindAt || DEFAULT_REMIND_AT}`;
+}
+
+function zoneOffset(timeZone, ms) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(ms));
+  const part = (type) => Number(parts.find((item) => item.type === type).value);
+  const wall = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'), part('second'));
+  return wall - Math.floor(ms / 1000) * 1000;
+}
+
+/** The moment a reminder is due, reading its time in the zone it was set in. */
+export function reminderInstant(task, fallbackZone) {
+  const [year, month, day] = task.dueAt.split('-').map(Number);
+  const [hour, minute] = (task.remindAt || DEFAULT_REMIND_AT).split(':').map(Number);
+  const zone = task.remindTz || fallbackZone;
+  if (!zone) return new Date(year, month - 1, day, hour, minute).getTime();
+  try {
+    const wall = Date.UTC(year, month - 1, day, hour, minute);
+    const guess = wall - zoneOffset(zone, wall);
+    return wall - zoneOffset(zone, guess);
+  } catch {
+    return new Date(year, month - 1, day, hour, minute).getTime();
+  }
+}
+
+function waiting(task) {
+  return Boolean(task.remind && !task.done && task.dueAt) && task.remindedOn !== reminderKey(task);
+}
+
+export function remindersDue(board, now = Date.now(), fallbackZone) {
+  return board.tasks.filter((task) => waiting(task) && reminderInstant(task, fallbackZone) <= now);
+}
+
+export function remindersForDay(board, today = todayKey()) {
+  return board.tasks.filter((task) => waiting(task) && task.dueAt <= today);
+}
+
+export function defaultRemindAt(dueAt, now = new Date()) {
+  if (dueAt !== todayKey(now) || now.getHours() < 9) return DEFAULT_REMIND_AT;
+  return `${String(Math.min(now.getHours() + 1, 23)).padStart(2, '0')}:00`;
 }

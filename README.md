@@ -27,21 +27,22 @@
 | **Steps** | Add a step under a task when it is more than one action. |
 | **Reorder** | Drag the grip on a task to move it among tasks with the same day and priority. |
 | **Delete** | Each task has its own delete button. Undo sits at the bottom for a few seconds. |
-| **Remind** | Turn on Remind me for a task with a day. Once the Vercel setup below is done, the reminder arrives around 9 AM that day even when Daymark is closed. Without it, the reminder only shows while Daymark is open. On iPhone, notifications only work after Daymark is added to the Home Screen. |
+| **Remind** | Turn on Remind me for a task with a day and pick a time. It starts at 9 AM, or the next hour if 9 AM has already passed today. With the Vercel setup below, the reminder arrives at that time even when Daymark is closed. Without it, the reminder only shows while Daymark is open. On iPhone, notifications only work after Daymark is added to the Home Screen. |
 | **Install** | Add it to your home screen. It opens like an app, with its own icon. |
 
 ## Sync and reminders on Vercel
 
-Out of the box, each browser keeps its own list and the status line says **On this device**. Four steps in the Vercel project give every device the same list and send reminders while Daymark is closed:
+Out of the box, each browser keeps its own list and the status line says **On this device**. These steps in the Vercel project give every device the same list and send reminders while Daymark is closed:
 
 1. Open **Storage**, create an **Upstash for Redis** database (the free plan is enough), and connect it to the project. That adds `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
-2. In **Settings → Environment Variables**, add `DAYMARK_PASSCODE` (8 characters or more) and `CRON_SECRET` (any long random text).
-3. Redeploy.
-4. On each phone or computer, open Daymark and enter the passcode once. The status line changes to **Synced**. Then turn on **Remind me** for a task and allow notifications. On iPhone, open Daymark from its Home Screen icon first.
+2. For reminders at the time you pick, also add **Upstash QStash** (free plan) from the same Storage page, or from the Upstash console. The project needs `QSTASH_TOKEN`. Skip this and reminders for a closed Daymark come once a day, around 9 AM.
+3. In **Settings → Environment Variables**, add `DAYMARK_PASSCODE` (4 digits, like `4821`) and `CRON_SECRET` (any long random text).
+4. Redeploy.
+5. On each phone or computer, open Daymark and type the 4 digits once. The status line changes to **Synced**. Then turn on **Remind me** for a task and allow notifications. On iPhone, open Daymark from its Home Screen icon first.
 
-The passcode keeps the list private. Without it, a connected database stays shut and the status line asks for `DAYMARK_PASSCODE`.
+The passcode keeps the list private. Without four digits in `DAYMARK_PASSCODE`, a connected database stays shut and the status line says so. Four digits are quick to guess, so after 5 wrong tries from one network Daymark refuses passcodes from there for 15 minutes.
 
-Reminders go out once a day for tasks due that day or overdue. The time is in `vercel.json`, in UTC: `30 3 * * *` is 9 AM in India. On Vercel's free plan the job can run any time within that hour. Once a device is signed up, the note under **Remind me** says "even when Daymark is closed".
+Once a device is signed up, the note under **Remind me** says whether the reminder will arrive at its time while Daymark is closed. With QStash, Daymark asks QStash to wake it at each reminder's time, up to 7 days ahead. Further out, it schedules once the day comes within that week. A daily job at 9 AM India time also catches anything missed. That time is in `vercel.json`, in UTC (`30 3 * * *`), and on Vercel's free plan it can run any time within that hour.
 
 On this computer, `npm run dev` keeps the list in `engine/var/board.json`, so every browser on that server shares it. Put `DAYMARK_PASSCODE` in `.env.local` to require the passcode here too.
 
