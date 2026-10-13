@@ -5,9 +5,13 @@ import {
   addTask,
   deleteList,
   deleteTask,
+  dueChoice,
   emptyBoard,
   groupOpenTasks,
   mergeBoards,
+  remindersDue,
+  resolveDue,
+  shiftDay,
   reorderTasks,
   restoreList,
   restoreTasks,
@@ -58,6 +62,43 @@ test('reorder keeps the dragged order', () => {
   board = reorderTasks(board, [first, second]);
   const none = groupOpenTasks(board, 'inbox', '2026-10-13').none;
   assert.deepEqual(none.map((task) => task.title), ['First', 'Second']);
+});
+
+test('due choices resolve to a day, or to no date limit', () => {
+  const today = '2026-10-31';
+  assert.equal(shiftDay(today, 1), '2026-11-01');
+  assert.equal(resolveDue({ kind: 'none', date: '2026-12-01' }, today), null);
+  assert.equal(resolveDue({ kind: 'today', date: '' }, today), today);
+  assert.equal(resolveDue({ kind: 'tomorrow', date: '' }, today), '2026-11-01');
+  assert.equal(resolveDue({ kind: 'pick', date: '' }, today), null);
+  assert.equal(resolveDue({ kind: 'pick', date: '2026-12-01' }, today), '2026-12-01');
+  assert.equal(dueChoice(null, today).kind, 'none');
+  assert.equal(dueChoice('2026-11-01', today).kind, 'tomorrow');
+  assert.deepEqual(dueChoice('2026-12-01', today), { kind: 'pick', date: '2026-12-01' });
+});
+
+test('a reminder fires from 9 AM on its day, once', () => {
+  let board = addTask(emptyBoard(), { title: 'Pay rent', dueAt: '2026-10-13', remind: true });
+  board = addTask(board, { title: 'No reminder', dueAt: '2026-10-13' });
+  assert.equal(remindersDue(board, '2026-10-13', 8).length, 0);
+  assert.deepEqual(remindersDue(board, '2026-10-13', 9).map((task) => task.title), ['Pay rent']);
+  assert.equal(remindersDue(board, '2026-10-14', 0).length, 1);
+  board = updateTask(board, board.tasks[0].id, { remindedOn: '2026-10-13' });
+  assert.equal(remindersDue(board, '2026-10-13', 10).length, 0);
+});
+
+test('higher priority sits first, and only known levels are kept', () => {
+  let board = addTask(emptyBoard(), { title: 'Low', priority: 'low' });
+  board = addTask(board, { title: 'High', priority: 'high' });
+  board = addTask(board, { title: 'Plain' });
+  board = addTask(board, { title: 'Odd', priority: 'urgent' });
+  const order = () => groupOpenTasks(board, 'inbox', '2026-10-13').none.map((task) => task.title);
+  assert.deepEqual(order(), ['High', 'Low', 'Odd', 'Plain']);
+  const plain = board.tasks.find((task) => task.title === 'Plain');
+  board = updateTask(board, plain.id, { priority: 'medium' });
+  assert.deepEqual(order(), ['High', 'Plain', 'Low', 'Odd']);
+  board = addTask(board, { title: 'Step', parentId: plain.id, priority: 'high' });
+  assert.equal(board.tasks.find((task) => task.title === 'Step').priority, 'none');
 });
 
 test('two devices keep a new task and a deletion', () => {

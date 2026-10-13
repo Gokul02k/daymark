@@ -5,16 +5,20 @@ import {
   addList,
   addTask,
   childrenOf,
+  cleanTitle,
   deleteList,
   deleteTask,
   doneTasks,
-  dueLabel,
+  dueChoice,
   groupOpenTasks,
   mergeBoards,
   normalizeBoard,
+  remindersDue,
   reorderTasks,
+  resolveDue,
   restoreList,
   restoreTasks,
+  sameBand,
   setDone,
   todayKey,
   updateTask,
@@ -25,14 +29,32 @@ const GROUPS = [
   ['overdue', 'Overdue'],
   ['today', 'Today'],
   ['later', 'Later'],
-  ['none', 'No date'],
+  ['none', 'No date limit'],
 ];
+
+const DUE_CHOICES = [
+  ['none', 'No date limit'],
+  ['today', 'Today'],
+  ['tomorrow', 'Tomorrow'],
+  ['pick', 'Pick a date'],
+];
+
+const PRIORITY_CHOICES = [
+  ['none', 'None'],
+  ['low', 'Low'],
+  ['medium', 'Medium'],
+  ['high', 'High'],
+];
+
+const PRIORITY_MARK = { low: '!', medium: '!!', high: '!!!' };
+
+const REMIND_NOTE = 'Arrives at 9 AM if Daymark is open, otherwise the next time you open it.';
 
 export default function HomePage() {
   const [state, setState] = useState(null);
   const [selected, setSelected] = useState('inbox');
   const [title, setTitle] = useState('');
-  const [due, setDue] = useState('');
+  const [sheet, setSheet] = useState(null);
   const [syncMode, setSyncMode] = useState('device');
   const [installEvent, setInstallEvent] = useState(null);
   const [showIosHint, setShowIosHint] = useState(false);
@@ -44,10 +66,12 @@ export default function HomePage() {
   const [naming, setNaming] = useState(false);
   const [listName, setListName] = useState('');
   const [dragOrder, setDragOrder] = useState(null);
-  const [remindHint, setRemindHint] = useState(false);
+  const [remindHint, setRemindHint] = useState('');
   const stateRef = useRef(null);
   const undoTimer = useRef(null);
   const pushTimer = useRef(null);
+
+  const listId = state?.lists.some((list) => list.id === selected) ? selected : 'inbox';
 
   function apply(next, { push = true } = {}) {
     const board = normalizeBoard(next);
@@ -77,6 +101,20 @@ export default function HomePage() {
     } catch {
       setSyncMode('device');
     }
+  }
+
+  function checkReminders() {
+    const board = stateRef.current;
+    if (!board || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const today = todayKey();
+    const due = remindersDue(board, today);
+    if (due.length === 0) return;
+    let next = board;
+    for (const task of due) {
+      notify(task.dueAt < today ? `${task.title} is overdue` : `${task.title} is due today`, task.id);
+      next = updateTask(next, task.id, { remindedOn: task.dueAt });
+    }
+    apply(next);
   }
 
   useEffect(() => {
@@ -118,33 +156,30 @@ export default function HomePage() {
     }
     pull();
     const timer = setInterval(pull, 8000);
+    const reminderTimer = setInterval(() => checkReminders(), 60 * 1000);
     window.addEventListener('focus', pull);
     return () => {
       cancel = true;
       clearInterval(timer);
+      clearInterval(reminderTimer);
       window.removeEventListener('focus', pull);
       window.removeEventListener('beforeinstallprompt', onPrompt);
     };
   }, []);
 
   useEffect(() => {
-    if (!state || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    const today = todayKey();
-    const hour = new Date().getHours();
-    const dueTasks = state.tasks.filter((task) => {
-      if (!task.remind || task.done || !task.dueAt || task.remindedOn === task.dueAt) return false;
-      if (task.dueAt < today) return true;
-      return task.dueAt === today && hour >= 9;
-    });
-    if (dueTasks.length === 0) return;
-    for (const task of dueTasks) {
-      const body = task.dueAt < today ? `${task.title} is overdue` : `${task.title} is due today`;
-      notify(body, task.id);
-    }
-    let next = state;
-    for (const task of dueTasks) next = updateTask(next, task.id, { remindedOn: task.dueAt });
-    apply(next);
+    checkReminders();
   }, [state]);
+
+  const sheetOpen = Boolean(sheet);
+  useEffect(() => {
+    if (!sheetOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') setSheet(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sheetOpen]);
 
   function chooseList(id) {
     setSelected(id);
@@ -159,12 +194,29 @@ export default function HomePage() {
 
   function onAdd(event) {
     event.preventDefault();
-    if (!state) return;
-    const next = addTask(state, { listId, title, dueAt: due || null });
+    if (!state || !cleanTitle(title)) return;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setEditing(null);
+    setRemindHint('');
+    setSheet({ title, kind: 'none', date: '', remind: false, priority: 'none' });
+  }
+
+  function confirmSheet(event) {
+    event.preventDefault();
+    if (!sheet) return;
+    const dueAt = resolveDue(sheet, todayKey());
+    if (sheet.kind === 'pick' && !dueAt) return;
+    const next = addTask(state, {
+      listId,
+      title: sheet.title,
+      dueAt,
+      remind: sheet.remind,
+      priority: sheet.priority,
+    });
     if (next === state) return;
     apply(next);
+    setSheet(null);
     setTitle('');
-    setDue('');
   }
 
   function onCreateList(event) {
@@ -203,32 +255,51 @@ export default function HomePage() {
 
   function startEdit(task) {
     setEditing(task.id);
-    setDraft({ title: task.title, dueAt: task.dueAt || '', remind: Boolean(task.remind) });
-    setRemindHint(false);
+    setDraft({
+      title: task.title,
+      ...dueChoice(task.dueAt, todayKey()),
+      remind: Boolean(task.remind),
+      priority: task.priority,
+    });
+    setRemindHint('');
   }
 
-  async function onRemindChange(checked) {
-    if (checked && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      const result = await Notification.requestPermission();
-      if (result !== 'granted') {
-        setRemindHint(true);
-        setDraft((current) => ({ ...current, remind: false }));
-        return;
-      }
+  async function allowReminders() {
+    if (typeof Notification === 'undefined') {
+      setRemindHint(
+        /iphone|ipad|ipod/i.test(navigator.userAgent)
+          ? 'On iPhone, add Daymark to your Home Screen first. Reminders work from there.'
+          : 'This browser cannot show notifications.',
+      );
+      return false;
     }
-    if (checked && typeof Notification !== 'undefined' && Notification.permission === 'denied') {
-      setRemindHint(true);
+    if (Notification.permission === 'default') await Notification.requestPermission();
+    if (Notification.permission === 'granted') {
+      setRemindHint('');
+      return true;
+    }
+    setRemindHint('Notifications are blocked for Daymark. Allow them in your browser settings to get reminders.');
+    return false;
+  }
+
+  async function toggleRemind(on, set) {
+    if (!on) {
+      set(false);
+      setRemindHint('');
       return;
     }
-    setDraft((current) => ({ ...current, remind: checked }));
+    if (await allowReminders()) set(true);
   }
 
   function saveEdit(event) {
     event.preventDefault();
+    const dueAt = resolveDue(draft, todayKey());
+    if (draft.kind === 'pick' && !dueAt) return;
     const next = updateTask(state, editing, {
       title: draft.title,
-      dueAt: draft.dueAt || null,
+      dueAt,
       remind: draft.remind,
+      priority: draft.priority,
     });
     if (next === state) return;
     apply(next);
@@ -250,12 +321,15 @@ export default function HomePage() {
     handle.setPointerCapture(event.pointerId);
     const ids = siblings.map((item) => item.id);
     const from = ids.indexOf(task.id);
+    const band = siblings.map((item, index) => (sameBand(item, task) ? index : -1)).filter((index) => index >= 0);
+    const lo = band[0];
+    const hi = band[band.length - 1];
     const startY = event.clientY;
     let latest = ids;
 
     function onMove(moveEvent) {
       const shift = Math.round((moveEvent.clientY - startY) / 64);
-      const to = Math.max(0, Math.min(ids.length - 1, from + shift));
+      const to = Math.max(lo, Math.min(hi, from + shift));
       const next = ids.slice();
       const [item] = next.splice(from, 1);
       next.splice(to, 0, item);
@@ -281,11 +355,13 @@ export default function HomePage() {
 
   if (!state) return <main />;
 
-  const listId = state.lists.some((list) => list.id === selected) ? selected : 'inbox';
   const today = todayKey();
+  const currentList = state.lists.find((list) => list.id === listId);
   const groups = groupOpenTasks(state, listId, today);
   const done = doneTasks(state, listId);
   const openCount = state.tasks.filter((task) => task.listId === listId && !task.done).length;
+  const remindDraft = (on) => toggleRemind(on, (value) => setDraft((current) => current && { ...current, remind: value }));
+  const remindSheet = (on) => toggleRemind(on, (value) => setSheet((current) => current && { ...current, remind: value }));
 
   function show(tasks) {
     if (!dragOrder || !tasks.every((task) => dragOrder.includes(task.id))) return tasks;
@@ -354,10 +430,9 @@ export default function HomePage() {
           onChange={(event) => setTitle(event.target.value)}
           placeholder="Add a task"
           aria-label="Task"
-          enterKeyHint="done"
+          enterKeyHint="next"
           maxLength={200}
         />
-        <input type="date" value={due} onChange={(event) => setDue(event.target.value)} aria-label="Due date" />
         <button type="submit">Add</button>
       </form>
 
@@ -383,7 +458,7 @@ export default function HomePage() {
                   onDelete={() => onDeleteTask(task.id)}
                   onEdit={() => startEdit(task)}
                   onDraft={setDraft}
-                  onRemind={onRemindChange}
+                  onRemind={remindDraft}
                   onSave={saveEdit}
                   onCancel={() => setEditing(null)}
                   onDrag={startDrag}
@@ -425,7 +500,7 @@ export default function HomePage() {
                 onDelete={() => onDeleteTask(task.id)}
                 onEdit={() => startEdit(task)}
                 onDraft={setDraft}
-                onRemind={onRemindChange}
+                onRemind={remindDraft}
                 onSave={saveEdit}
                 onCancel={() => setEditing(null)}
                 onDrag={startDrag}
@@ -451,7 +526,148 @@ export default function HomePage() {
       ) : null}
 
       {showIosHint ? <p className="hint">To install on iPhone, tap Share, then Add to Home Screen.</p> : null}
+
+      {sheet ? (
+        <AddSheet
+          sheet={sheet}
+          listName={currentList ? currentList.name : 'Inbox'}
+          today={today}
+          remindHint={remindHint}
+          onChange={setSheet}
+          onRemind={remindSheet}
+          onCancel={() => setSheet(null)}
+          onConfirm={confirmSheet}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function AddSheet({ sheet, listName, today, remindHint, onChange, onRemind, onCancel, onConfirm }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  const dueAt = resolveDue(sheet, today);
+  const blocked = !cleanTitle(sheet.title) || (sheet.kind === 'pick' && !dueAt);
+  return (
+    <div
+      className="backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <form
+        ref={ref}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sheet-title"
+        tabIndex={-1}
+        onSubmit={onConfirm}
+      >
+        <p id="sheet-title" className="sheet-title">
+          New task in {listName}
+        </p>
+        <input
+          className="field"
+          value={sheet.title}
+          onChange={(event) => onChange({ ...sheet, title: event.target.value })}
+          aria-label="Task"
+          maxLength={200}
+        />
+        <p className="label">When is it due?</p>
+        <DuePicker
+          choice={sheet}
+          min={today}
+          onChange={(choice) => onChange({ ...sheet, ...choice, remind: choice.kind === 'none' ? false : sheet.remind })}
+        />
+        <RemindToggle on={sheet.remind} disabled={!dueAt} onToggle={onRemind} />
+        {remindHint ? <p className="hint tight">{remindHint}</p> : null}
+        <p className="label">Priority</p>
+        <PriorityPicker value={sheet.priority} onChange={(priority) => onChange({ ...sheet, priority })} />
+        <div className="sheet-actions">
+          <button type="button" className="textbtn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="primary" disabled={blocked}>
+            Add task
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function DuePicker({ choice, min, onChange }) {
+  return (
+    <div className="due">
+      <div className="choices" role="group" aria-label="Due">
+        {DUE_CHOICES.map(([kind, label]) => (
+          <button
+            key={kind}
+            type="button"
+            className={choice.kind === kind ? 'chip on' : 'chip'}
+            aria-pressed={choice.kind === kind}
+            onClick={() => onChange({ kind, date: choice.date })}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {choice.kind === 'pick' ? (
+        <input
+          type="date"
+          className="field"
+          value={choice.date}
+          min={min}
+          onChange={(event) => onChange({ kind: 'pick', date: event.target.value })}
+          aria-label="Due date"
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PriorityPicker({ value, onChange }) {
+  return (
+    <div className="choices" role="group" aria-label="Priority">
+      {PRIORITY_CHOICES.map(([level, label]) => (
+        <button
+          key={level}
+          type="button"
+          className={value === level ? 'chip on' : 'chip'}
+          aria-pressed={value === level}
+          onClick={() => onChange(level)}
+        >
+          {PRIORITY_MARK[level] ? (
+            <span className={`pmark p-${level}`} aria-hidden="true">
+              {PRIORITY_MARK[level]}
+            </span>
+          ) : null}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RemindToggle({ on, disabled, onToggle }) {
+  const checked = Boolean(on) && !disabled;
+  return (
+    <div className="remindbox">
+      <label className={disabled ? 'remind off' : 'remind'}>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onToggle(event.target.checked)}
+        />
+        Remind me
+      </label>
+      {disabled ? <p className="note">Choose a day to turn this on.</p> : null}
+      {checked ? <p className="note">{REMIND_NOTE}</p> : null}
+    </div>
   );
 }
 
@@ -521,8 +737,10 @@ function TaskRow({
   onCancel,
   onDrag,
 }) {
-  const label = prettyDue(task.dueAt, today);
-  const editingThis = editing === task.id;
+  const meta = rowMeta(task, today, done);
+  const editingThis = editing === task.id && draft;
+  const mark = done ? null : PRIORITY_MARK[task.priority];
+  const spoken = mark ? `${task.title}, ${task.priority} priority` : task.title;
   return (
     <div className={dragOrder && dragOrder[0] === task.id ? 'row dragging' : 'row'}>
       <button
@@ -533,40 +751,39 @@ function TaskRow({
       >
         ⋮⋮
       </button>
-      <button type="button" className={done ? 'check checked' : 'check'} onClick={onToggle} aria-label={task.title}>
+      <button type="button" className={done ? 'check checked' : 'check'} onClick={onToggle} aria-label={spoken}>
         <span className="box" aria-hidden="true" />
       </button>
       <div className="body">
         {editingThis ? (
           <form className="edit" onSubmit={onSave}>
             <input
+              className="field"
               value={draft.title}
               onChange={(event) => onDraft({ ...draft, title: event.target.value })}
               aria-label="Task title"
               maxLength={200}
             />
             {child ? null : (
-              <input
-                type="date"
-                value={draft.dueAt}
-                onChange={(event) => onDraft({ ...draft, dueAt: event.target.value })}
-                aria-label="Due date"
-              />
-            )}
-            {child ? null : (
-              <label className="remind">
-                <input
-                  type="checkbox"
-                  checked={Boolean(draft.remind) && Boolean(draft.dueAt)}
-                  disabled={!draft.dueAt}
-                  onChange={(event) => onRemind(event.target.checked)}
+              <>
+                <DuePicker
+                  choice={draft}
+                  onChange={(choice) =>
+                    onDraft({ ...draft, ...choice, remind: choice.kind === 'none' ? false : draft.remind })
+                  }
                 />
-                Remind me
-              </label>
+                <RemindToggle on={draft.remind} disabled={!resolveDue(draft, today)} onToggle={onRemind} />
+                <PriorityPicker value={draft.priority} onChange={(priority) => onDraft({ ...draft, priority })} />
+              </>
             )}
-            {remindHint ? <p className="hint tight">Allow notifications to remind you.</p> : null}
+            {remindHint ? <p className="hint tight">{remindHint}</p> : null}
             <div className="editactions">
-              <button type="submit">Save</button>
+              <button
+                type="submit"
+                disabled={!cleanTitle(draft.title) || (draft.kind === 'pick' && !resolveDue(draft, today))}
+              >
+                Save
+              </button>
               <button type="button" className="textbtn" onClick={onCancel}>
                 Cancel
               </button>
@@ -574,8 +791,15 @@ function TaskRow({
           </form>
         ) : (
           <button type="button" className="titlebtn" onClick={onEdit}>
-            <span className={done ? 'title checked-title' : 'title'}>{task.title}</span>
-            {label ? <span className={label === 'Overdue' ? 'meta late' : 'meta'}>{label}{task.remind ? ' · Remind' : ''}</span> : null}
+            <span className={done ? 'title checked-title' : 'title'}>
+              {mark ? (
+                <span className={`pmark p-${task.priority}`} aria-hidden="true">
+                  {mark}
+                </span>
+              ) : null}
+              {task.title}
+            </span>
+            {meta.text ? <span className={meta.late ? 'meta late' : 'meta'}>{meta.text}</span> : null}
           </button>
         )}
       </div>
@@ -586,10 +810,16 @@ function TaskRow({
   );
 }
 
-function prettyDue(dueAt, today) {
-  const label = dueLabel(dueAt, today);
-  if (!label || label !== dueAt) return label;
-  const [year, month, day] = dueAt.split('-').map(Number);
+function rowMeta(task, today, done) {
+  if (done) return { text: '', late: false };
+  const parts = [];
+  if (task.dueAt && task.dueAt !== today) parts.push(shortDate(task.dueAt));
+  if (task.remind) parts.push('Reminder on');
+  return { text: parts.join(' · '), late: Boolean(task.dueAt) && task.dueAt < today };
+}
+
+function shortDate(key) {
+  const [year, month, day] = key.split('-').map(Number);
   return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
@@ -598,10 +828,18 @@ function signature(board) {
 }
 
 function notify(body, tag) {
-  const show = (reg) => {
-    if (reg) reg.showNotification('Daymark', { body, tag });
-    else new Notification('Daymark', { body, tag });
+  const options = { body, tag, icon: '/icons/icon-192.png' };
+  const direct = () => {
+    try {
+      new Notification('Daymark', options);
+    } catch {}
   };
-  if (navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(show).catch(() => {});
-  else show(null);
+  if (!navigator.serviceWorker) {
+    direct();
+    return;
+  }
+  navigator.serviceWorker
+    .getRegistration()
+    .then((reg) => (reg ? reg.showNotification('Daymark', options) : direct()))
+    .catch(direct);
 }

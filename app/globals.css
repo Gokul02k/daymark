@@ -135,6 +135,7 @@ h2 {
 }
 
 .box {
+  display: block;
   width: 1.35rem;
   height: 1.35rem;
   margin-top: 0.1rem;
@@ -201,16 +202,6 @@ h2 {
   min-height: 36px;
 }
 
-.add { flex-wrap: wrap; }
-.add input[type='date'] {
-  min-height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--text);
-  padding: 0 0.6rem;
-}
-
 .block { display: block; }
 .tasks li.block + li.block { border-top: 1px solid var(--line); }
 
@@ -228,7 +219,7 @@ h2 {
   touch-action: none;
 }
 
-.check { padding: 0.9rem 0; }
+.check { padding: 0.75rem 0.65rem 0.75rem 0.2rem; }
 
 .body { flex: 1; min-width: 0; padding: 0.55rem 0; }
 
@@ -261,7 +252,7 @@ h2 {
   font-weight: 650;
 }
 .chipform { display: flex; gap: 0.35rem; }
-.edit input, .stepform input {
+.stepform input, .field {
   min-height: 44px;
   border-radius: 10px;
   border: 1px solid var(--line);
@@ -278,7 +269,72 @@ h2 {
   padding: 0 0.8rem;
   font-weight: 650;
 }
-.remind { display: flex; gap: 0.45rem; align-items: center; color: var(--muted); }
+.editactions button[type='submit']:disabled, .primary:disabled { opacity: 0.45; }
+.remind { display: flex; gap: 0.5rem; align-items: center; color: var(--text); }
+.remind input { width: 1.2rem; height: 1.2rem; accent-color: var(--ok); }
+.remind.off { opacity: 0.5; }
+.remindbox { display: flex; flex-direction: column; gap: 0.2rem; }
+.note { margin: 0; color: var(--muted); font-size: 0.85rem; }
+
+.pmark { font-weight: 800; margin-right: 0.35rem; }
+.p-high { color: #f0907d; }
+.p-medium { color: #e8c170; }
+.p-low { color: #86b3ef; }
+.chip.on .pmark { color: var(--ink); }
+
+.due { display: flex; flex-direction: column; gap: 0.55rem; }
+.choices { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(4, 6, 4, 0.62);
+}
+
+.sheet {
+  width: 100%;
+  max-width: 40rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding:
+    1.25rem
+    max(1.25rem, env(safe-area-inset-right))
+    max(1.4rem, env(safe-area-inset-bottom))
+    max(1.25rem, env(safe-area-inset-left));
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--panel);
+  outline: none;
+  max-height: calc(100dvh - 1.5rem);
+  overflow-y: auto;
+}
+
+.sheet-title { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.sheet .field { min-height: 48px; font-size: 1.05rem; }
+.label { margin: 0.35rem 0 0; font-weight: 600; }
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 0.35rem;
+}
+
+.primary {
+  min-height: 48px;
+  padding: 0 1.2rem;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ok);
+  color: var(--ink);
+  font-weight: 650;
+}
 
 .subs { list-style: none; margin: 0 0 0.2rem 1.6rem; padding: 0; }
 .step { margin: 0 0 0.55rem 2.6rem; }

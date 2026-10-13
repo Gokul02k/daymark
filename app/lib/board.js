@@ -20,6 +20,14 @@ export function cleanDue(value) {
   return text;
 }
 
+export const PRIORITIES = ['none', 'low', 'medium', 'high'];
+
+const PRIORITY_RANK = { none: 0, low: 1, medium: 2, high: 3 };
+
+export function cleanPriority(value) {
+  return PRIORITIES.includes(value) ? value : 'none';
+}
+
 export function emptyBoard() {
   return {
     lists: [{ id: 'inbox', name: 'Inbox', createdAt: new Date().toISOString(), updatedAt: new Date(0).toISOString() }],
@@ -53,6 +61,7 @@ export function normalizeBoard(raw) {
       title: cleanTitle(task.title),
       done: Boolean(task.done),
       dueAt: cleanDue(task.dueAt),
+      priority: cleanPriority(task.priority),
       remind: Boolean(task.remind) && Boolean(cleanDue(task.dueAt)),
       remindedOn: task.remindedOn || null,
       position: Number.isFinite(task.position) ? task.position : index,
@@ -151,7 +160,10 @@ export function restoreList(board, removed) {
   });
 }
 
-export function addTask(board, { listId = 'inbox', title, dueAt = null, parentId = null, remind = false } = {}) {
+export function addTask(
+  board,
+  { listId = 'inbox', title, dueAt = null, parentId = null, remind = false, priority = 'none' } = {},
+) {
   const text = cleanTitle(title);
   if (!text) return board;
   let parent = parentId || null;
@@ -171,6 +183,7 @@ export function addTask(board, { listId = 'inbox', title, dueAt = null, parentId
     title: text,
     done: false,
     dueAt: due,
+    priority: parent ? 'none' : cleanPriority(priority),
     remind: Boolean(remind) && Boolean(due),
     remindedOn: null,
     position: nextPosition(board.tasks, list, parent),
@@ -196,6 +209,7 @@ export function updateTask(board, id, patch) {
         ...task,
         title: title === undefined ? task.title : title,
         dueAt: nextDue,
+        priority: patch.priority === undefined ? task.priority : cleanPriority(patch.priority),
         remind: nextRemind && Boolean(nextDue),
         remindedOn: patch.remindedOn !== undefined ? patch.remindedOn : dueChanged ? null : task.remindedOn,
         updatedAt: stamp(),
@@ -320,22 +334,29 @@ export function childrenOf(board, id) {
     .sort((a, b) => b.position - a.position);
 }
 
+function compareOpen(a, b) {
+  return (
+    (a.dueAt || '').localeCompare(b.dueAt || '') ||
+    PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority] ||
+    b.position - a.position
+  );
+}
+
+/** Tasks that may trade places by dragging: same day, same priority. */
+export function sameBand(a, b) {
+  return (a.dueAt || '') === (b.dueAt || '') && a.priority === b.priority;
+}
+
 export function groupOpenTasks(board, listId, today = todayKey()) {
   const groups = { overdue: [], today: [], later: [], none: [] };
-  const tasks = board.tasks
-    .filter((task) => task.listId === listId && !task.parentId && !task.done)
-    .slice()
-    .sort((a, b) => b.position - a.position);
+  const tasks = board.tasks.filter((task) => task.listId === listId && !task.parentId && !task.done);
   for (const task of tasks) {
     if (!task.dueAt) groups.none.push(task);
     else if (task.dueAt < today) groups.overdue.push(task);
     else if (task.dueAt === today) groups.today.push(task);
     else groups.later.push(task);
   }
-  const byDue = (a, b) => a.dueAt.localeCompare(b.dueAt) || b.position - a.position;
-  groups.overdue.sort(byDue);
-  groups.today.sort(byDue);
-  groups.later.sort(byDue);
+  for (const group of Object.values(groups)) group.sort(compareOpen);
   return groups;
 }
 
@@ -346,9 +367,31 @@ export function doneTasks(board, listId) {
     .sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
 }
 
-export function dueLabel(dueAt, today = todayKey()) {
-  if (!dueAt) return '';
-  if (dueAt === today) return 'Today';
-  if (dueAt < today) return 'Overdue';
-  return dueAt;
+export const REMIND_HOUR = 9;
+
+export function shiftDay(key, days) {
+  const [year, month, day] = key.split('-').map(Number);
+  return todayKey(new Date(year, month - 1, day + days));
+}
+
+/** `choice` is what the add and edit forms hold: { kind: 'none' | 'today' | 'tomorrow' | 'pick', date }. */
+export function resolveDue(choice, today = todayKey()) {
+  if (choice.kind === 'today') return today;
+  if (choice.kind === 'tomorrow') return shiftDay(today, 1);
+  if (choice.kind === 'pick') return cleanDue(choice.date);
+  return null;
+}
+
+export function dueChoice(dueAt, today = todayKey()) {
+  if (!dueAt) return { kind: 'none', date: '' };
+  if (dueAt === today) return { kind: 'today', date: dueAt };
+  if (dueAt === shiftDay(today, 1)) return { kind: 'tomorrow', date: dueAt };
+  return { kind: 'pick', date: dueAt };
+}
+
+export function remindersDue(board, today = todayKey(), hour = new Date().getHours()) {
+  return board.tasks.filter((task) => {
+    if (!task.remind || task.done || !task.dueAt || task.remindedOn === task.dueAt) return false;
+    return task.dueAt < today || (task.dueAt === today && hour >= REMIND_HOUR);
+  });
 }
