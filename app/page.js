@@ -28,10 +28,11 @@ import {
   updateTask,
 } from './lib/board';
 import {
-  loadPasscode,
+  clearPass,
+  loadPass,
   loadSelectedList,
   loadState,
-  savePasscode,
+  savePass,
   savePersisted,
   saveSelectedList,
 } from './lib/storage';
@@ -93,6 +94,7 @@ export default function HomePage() {
   const pullRef = useRef(null);
   const pushInfo = useRef(null);
   const pushChecked = useRef(false);
+  const throttledUntil = useRef(0);
 
   const listId = state?.lists.some((list) => list.id === selected) ? selected : 'inbox';
 
@@ -106,12 +108,22 @@ export default function HomePage() {
     pushTimer.current = setTimeout(() => send(board), 350);
   }
 
+  function lockedOut(reason) {
+    let mode = modeFor(reason);
+    if (mode === 'locked') {
+      clearPass();
+      if (throttledUntil.current > Date.now()) mode = 'throttled';
+    }
+    setSyncMode(mode);
+    return mode;
+  }
+
   async function send(board) {
     try {
       const res = await api('/api/board', { method: 'PUT', body: { board } });
       const data = await res.json();
       if (!data.synced || !data.board) {
-        setSyncMode(modeFor(data.reason));
+        lockedOut(data.reason);
         return;
       }
       setSyncMode('synced');
@@ -181,6 +193,7 @@ export default function HomePage() {
     stateRef.current = local;
     setState(local);
     setSelected(loadSelectedList());
+    if (!loadPass()) clearPass();
 
     const onPrompt = (event) => {
       event.preventDefault();
@@ -197,12 +210,7 @@ export default function HomePage() {
         const res = await api('/api/board');
         const data = await res.json();
         if (cancel) return 'device';
-        if (!data.synced) {
-          const mode = modeFor(data.reason);
-          if (mode === 'locked' && loadPasscode()) savePasscode('');
-          setSyncMode(mode);
-          return mode;
-        }
+        if (!data.synced) return lockedOut(data.reason);
         setSyncMode('synced');
         preparePush();
         if (!data.board) {
@@ -421,11 +429,27 @@ export default function HomePage() {
   }
 
   async function unlockWith(code) {
-    savePasscode(code);
     setPassHint('');
     setPassInput('');
-    const mode = await pullRef.current?.();
-    if (mode === 'locked') setPassHint("That passcode didn't match.");
+    try {
+      const res = await fetch('/api/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: code }),
+      });
+      const data = await res.json();
+      if (!data.unlocked) {
+        if (data.reason === 'throttled') throttledUntil.current = Date.now() + 15 * 60 * 1000;
+        if (data.reason === 'locked') setPassHint("That passcode didn't match.");
+        lockedOut(data.reason);
+        return;
+      }
+      if (data.pass) savePass(data);
+      throttledUntil.current = 0;
+      await pullRef.current?.();
+    } catch {
+      setPassHint('Could not reach Daymark. Try again.');
+    }
   }
 
   function onPassInput(value) {
@@ -946,7 +970,7 @@ function localZone() {
 
 function api(path, { method = 'GET', body } = {}) {
   const headers = {
-    'x-daymark-passcode': encodeURIComponent(loadPasscode()),
+    'x-daymark-session': loadPass()?.pass || '',
     'x-daymark-zone': localZone(),
   };
   if (body !== undefined) headers['Content-Type'] = 'application/json';

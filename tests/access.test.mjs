@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { requestAccess } from '../app/lib/access.js';
+import { requestAccess, unlock } from '../app/lib/access.js';
 
 const KEYS = [
   'KV_REST_API_URL',
@@ -9,12 +9,14 @@ const KEYS = [
   'UPSTASH_REDIS_REST_TOKEN',
   'VERCEL',
   'DAYMARK_PASSCODE',
+  'DAYMARK_UNLOCK_HOURS',
+  'DAYMARK_SESSION_SECRET',
 ];
 
 async function withEnv(values, fn) {
   const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
   for (const key of KEYS) delete process.env[key];
-  Object.assign(process.env, values);
+  Object.assign(process.env, { DAYMARK_SESSION_SECRET: 'test-secret' }, values);
   try {
     await fn();
   } finally {
@@ -25,52 +27,82 @@ async function withEnv(values, fn) {
   }
 }
 
-function ask(passcode, ip = '203.0.113.1') {
+function from(ip, pass) {
   const headers = { 'x-real-ip': ip };
-  if (passcode !== undefined) headers['x-daymark-passcode'] = encodeURIComponent(passcode);
+  if (pass) headers['x-daymark-session'] = pass;
   return { headers: new Headers(headers) };
 }
 
 const KV = { KV_REST_API_URL: 'https://kv.example', KV_REST_API_TOKEN: 'token' };
 
 test('a connected database stays shut until a four-digit passcode is set', async () => {
-  await withEnv(KV, async () => assert.equal(await requestAccess(ask('1234')), 'unset'));
+  await withEnv(KV, async () => assert.equal(await requestAccess(from('203.0.113.1')), 'unset'));
   await withEnv({ ...KV, DAYMARK_PASSCODE: 'blue river 7' }, async () => {
-    assert.equal(await requestAccess(ask('blue river 7')), 'unset');
+    assert.equal((await unlock(from('203.0.113.1'), 'blue river 7')).access, 'unset');
   });
   await withEnv({ ...KV, DAYMARK_PASSCODE: '4821' }, async () => {
-    assert.equal(await requestAccess(ask()), 'locked');
+    assert.equal(await requestAccess(from('203.0.113.1')), 'locked');
   });
 });
 
-test('the right four digits open the list', async () => {
+test('the right four digits give a pass that opens the list for a day', async () => {
   await withEnv({ DAYMARK_PASSCODE: '4821' }, async () => {
-    assert.equal(await requestAccess(ask('4821', '203.0.113.2')), 'open');
-    assert.equal(await requestAccess(ask('4820', '203.0.113.2')), 'locked');
+    const ip = '203.0.113.2';
+    assert.equal((await unlock(from(ip), '4820')).access, 'locked');
+    const result = await unlock(from(ip), '4821');
+    assert.equal(result.access, 'open');
+    assert.equal(result.persist, true);
+    assert.ok(Math.abs(result.expiresAt - Date.now() - 24 * 60 * 60 * 1000) < 5000);
+    assert.equal(await requestAccess(from(ip, result.pass)), 'open');
+    assert.equal(await requestAccess(from(ip, `${result.pass}x`)), 'locked');
+    assert.equal(await requestAccess(from(ip, `${Date.now() + 1e9}.${result.pass.split('.')[1]}`)), 'locked');
+  });
+});
+
+test('a pass runs out, and a new passcode turns old passes away', async () => {
+  await withEnv({ DAYMARK_PASSCODE: '4821', DAYMARK_UNLOCK_HOURS: '0.0000005' }, async () => {
+    const result = await unlock(from('203.0.113.3'), '4821');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(await requestAccess(from('203.0.113.3', result.pass)), 'locked');
+  });
+  let pass;
+  await withEnv({ DAYMARK_PASSCODE: '4821' }, async () => {
+    pass = (await unlock(from('203.0.113.4'), '4821')).pass;
+  });
+  await withEnv({ DAYMARK_PASSCODE: '7302' }, async () => {
+    assert.equal(await requestAccess(from('203.0.113.4', pass)), 'locked');
+  });
+});
+
+test('DAYMARK_UNLOCK_HOURS=0 keeps the pass only for this visit', async () => {
+  await withEnv({ DAYMARK_PASSCODE: '4821', DAYMARK_UNLOCK_HOURS: '0' }, async () => {
+    const result = await unlock(from('203.0.113.5'), '4821');
+    assert.equal(result.access, 'open');
+    assert.equal(result.persist, false);
   });
 });
 
 test('five wrong tries from one address shut it out, even with the right digits', async () => {
   await withEnv({ DAYMARK_PASSCODE: '4821' }, async () => {
-    const ip = '203.0.113.3';
+    const ip = '203.0.113.6';
     for (const guess of ['0000', '1111', '2222', '3333']) {
-      assert.equal(await requestAccess(ask(guess, ip)), 'locked');
+      assert.equal((await unlock(from(ip), guess)).access, 'locked');
     }
-    assert.equal(await requestAccess(ask('4444', ip)), 'throttled');
-    assert.equal(await requestAccess(ask('4821', ip)), 'throttled');
-    assert.equal(await requestAccess(ask('4821', '203.0.113.4')), 'open');
+    assert.equal((await unlock(from(ip), '4444')).access, 'throttled');
+    assert.equal((await unlock(from(ip), '4821')).access, 'throttled');
+    assert.equal((await unlock(from('203.0.113.7'), '4821')).access, 'open');
   });
 });
 
-test('opening the app without a passcode never counts as a wrong try', async () => {
+test('syncing without a pass never counts as a wrong try', async () => {
   await withEnv({ DAYMARK_PASSCODE: '4821' }, async () => {
-    const ip = '203.0.113.5';
-    for (let i = 0; i < 10; i += 1) assert.equal(await requestAccess(ask(undefined, ip)), 'locked');
-    assert.equal(await requestAccess(ask('4821', ip)), 'open');
+    const ip = '203.0.113.8';
+    for (let i = 0; i < 10; i += 1) assert.equal(await requestAccess(from(ip)), 'locked');
+    assert.equal((await unlock(from(ip), '4821')).access, 'open');
   });
 });
 
 test('Vercel without a database has no shared list, and this computer is open', async () => {
-  await withEnv({ VERCEL: '1' }, async () => assert.equal(await requestAccess(ask()), 'off'));
-  await withEnv({}, async () => assert.equal(await requestAccess(ask()), 'open'));
+  await withEnv({ VERCEL: '1' }, async () => assert.equal(await requestAccess(from('203.0.113.9')), 'off'));
+  await withEnv({}, async () => assert.equal(await requestAccess(from('203.0.113.9')), 'open'));
 });

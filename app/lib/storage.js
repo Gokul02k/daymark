@@ -2,7 +2,8 @@ import { emptyBoard, normalizeBoard } from './board';
 
 const KEY = 'gokul-v1'; // kept so tasks saved under the old name still load
 const LIST_KEY = 'daymark-list';
-const PASSCODE_KEY = 'daymark-passcode';
+const PASS_KEY = 'daymark-pass';
+const OLD_PASSCODE_KEY = 'daymark-passcode';
 
 export function loadPersisted() {
   if (typeof window === 'undefined') return null;
@@ -37,12 +38,27 @@ export function saveSelectedList(id) {
   localStorage.setItem(LIST_KEY, id);
 }
 
-export function loadPasscode() {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem(PASSCODE_KEY) || '';
+/** The signed pass from unlocking, or null once it has run out. */
+export function loadPass() {
+  if (typeof window === 'undefined') return null;
+  for (const store of [sessionStorage, localStorage]) {
+    try {
+      const saved = JSON.parse(store.getItem(PASS_KEY) || 'null');
+      if (saved?.pass && saved.expiresAt > Date.now()) return saved;
+    } catch {}
+  }
+  return null;
 }
 
-export function savePasscode(value) {
+export function savePass({ pass, expiresAt, persist }) {
+  clearPass();
+  const store = persist ? localStorage : sessionStorage;
+  store.setItem(PASS_KEY, JSON.stringify({ pass, expiresAt }));
+}
+
+export function clearPass() {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(PASSCODE_KEY, value);
+  localStorage.removeItem(PASS_KEY);
+  sessionStorage.removeItem(PASS_KEY);
+  localStorage.removeItem(OLD_PASSCODE_KEY);
 }

@@ -42,6 +42,8 @@ Out of the box, each browser keeps its own list and the status line says **On th
 
 The passcode keeps the list private. Without four digits in `DAYMARK_PASSCODE`, a connected database stays shut and the status line says so. Four digits are quick to guess, so after 5 wrong tries from one network Daymark refuses passcodes from there for 15 minutes.
 
+The device doesn't keep the passcode. Typing it gets that device a pass that runs out after 24 hours, and then Daymark asks for the 4 digits again. Set `DAYMARK_UNLOCK_HOURS` to change how long the pass lasts, or to `0` to ask every time Daymark is opened. While it is locked, the list still works on that device and syncs once you unlock. Changing `DAYMARK_PASSCODE` signs every device out.
+
 Once a device is signed up, the note under **Remind me** says whether the reminder will arrive at its time while Daymark is closed. With QStash, Daymark asks QStash to wake it at each reminder's time, up to 7 days ahead. Further out, it schedules once the day comes within that week. A daily job at 9 AM India time also catches anything missed. That time is in `vercel.json`, in UTC (`30 3 * * *`), and on Vercel's free plan it can run any time within that hour.
 
 On this computer, `npm run dev` keeps the list in `engine/var/board.json`, so every browser on that server shares it. Put `DAYMARK_PASSCODE` in `.env.local` to require the passcode here too.
