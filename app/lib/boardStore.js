@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 
-const FILE = path.join(process.cwd(), 'engine', 'var', 'board.json');
+const DIR = path.join(process.cwd(), 'engine', 'var');
 
 function kvConfig() {
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
@@ -31,35 +31,45 @@ export function storeMode() {
   return 'file';
 }
 
-export async function readBoard() {
-  if (storeMode() === 'redis') {
-    const data = await kvCommand(['GET', 'daymark-board']);
-    if (!data.result) return null;
-    return JSON.parse(data.result);
-  }
-  if (storeMode() === 'off') {
-    const err = new Error('Shared list is not configured');
-    err.code = 'NO_STORE';
-    throw err;
+function noStore() {
+  const err = new Error('Shared list is not configured');
+  err.code = 'NO_STORE';
+  return err;
+}
+
+export async function readJson(name) {
+  const mode = storeMode();
+  if (mode === 'off') throw noStore();
+  if (mode === 'redis') {
+    const data = await kvCommand(['GET', `daymark-${name}`]);
+    return data.result ? JSON.parse(data.result) : null;
   }
   try {
-    return JSON.parse(await readFile(FILE, 'utf8'));
+    return JSON.parse(await readFile(path.join(DIR, `${name}.json`), 'utf8'));
   } catch (err) {
     if (err.code === 'ENOENT') return null;
     throw err;
   }
 }
 
-export async function writeBoard(board) {
-  if (storeMode() === 'redis') {
-    await kvCommand(['SET', 'daymark-board', JSON.stringify(board)]);
+export async function writeJson(name, value, { onlyIfMissing = false } = {}) {
+  const mode = storeMode();
+  if (mode === 'off') throw noStore();
+  const text = JSON.stringify(value);
+  if (mode === 'redis') {
+    const command = ['SET', `daymark-${name}`, text];
+    await kvCommand(onlyIfMissing ? [...command, 'NX'] : command);
     return;
   }
-  if (storeMode() === 'off') {
-    const err = new Error('Shared list is not configured');
-    err.code = 'NO_STORE';
-    throw err;
-  }
-  await mkdir(path.dirname(FILE), { recursive: true });
-  await writeFile(FILE, JSON.stringify(board));
+  if (onlyIfMissing && (await readJson(name)) !== null) return;
+  await mkdir(DIR, { recursive: true });
+  await writeFile(path.join(DIR, `${name}.json`), text);
+}
+
+export function readBoard() {
+  return readJson('board');
+}
+
+export function writeBoard(board) {
+  return writeJson('board', board);
 }

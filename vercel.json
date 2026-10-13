@@ -1,3 +1,4 @@
 {
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [{ "path": "/api/push/cron", "schedule": "30 3 * * *" }]
 }

@@ -389,6 +389,33 @@ export function dueChoice(dueAt, today = todayKey()) {
   return { kind: 'pick', date: dueAt };
 }
 
+export function dayInZone(timeZone, date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type).value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  } catch {
+    return todayKey(date);
+  }
+}
+
+export function reminderMessage(due, today = todayKey()) {
+  const tasks = due.slice().sort((a, b) => PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority]);
+  if (tasks.length === 1) {
+    const [task] = tasks;
+    const body = task.dueAt < today ? `${task.title} is overdue` : `${task.title} is due today`;
+    return { title: 'Daymark', body, tag: 'daymark-reminder' };
+  }
+  const names = tasks.slice(0, 3).map((task) => task.title).join(', ');
+  const more = tasks.length > 3 ? `, and ${tasks.length - 3} more` : '';
+  return { title: 'Daymark', body: `${tasks.length} tasks due: ${names}${more}`, tag: 'daymark-reminder' };
+}
+
 export function remindersDue(board, today = todayKey(), hour = new Date().getHours()) {
   return board.tasks.filter((task) => {
     if (!task.remind || task.done || !task.dueAt || task.remindedOn === task.dueAt) return false;

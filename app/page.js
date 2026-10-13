@@ -13,6 +13,7 @@ import {
   groupOpenTasks,
   mergeBoards,
   normalizeBoard,
+  reminderMessage,
   remindersDue,
   reorderTasks,
   resolveDue,
@@ -23,7 +24,14 @@ import {
   todayKey,
   updateTask,
 } from './lib/board';
-import { loadSelectedList, loadState, savePersisted, saveSelectedList } from './lib/storage';
+import {
+  loadPasscode,
+  loadSelectedList,
+  loadState,
+  savePasscode,
+  savePersisted,
+  saveSelectedList,
+} from './lib/storage';
 
 const GROUPS = [
   ['overdue', 'Overdue'],
@@ -48,7 +56,17 @@ const PRIORITY_CHOICES = [
 
 const PRIORITY_MARK = { low: '!', medium: '!!', high: '!!!' };
 
-const REMIND_NOTE = 'Arrives at 9 AM if Daymark is open, otherwise the next time you open it.';
+const REMIND_NOTE = {
+  push: 'Arrives around 9 AM, even when Daymark is closed.',
+  open: 'Arrives at 9 AM if Daymark is open, otherwise the next time you open it.',
+};
+
+const STATUS_TEXT = {
+  synced: 'Synced',
+  device: 'On this device',
+  locked: 'Enter your passcode to sync',
+  unset: 'On this device. Set DAYMARK_PASSCODE in Vercel to sync.',
+};
 
 export default function HomePage() {
   const [state, setState] = useState(null);
@@ -67,9 +85,15 @@ export default function HomePage() {
   const [listName, setListName] = useState('');
   const [dragOrder, setDragOrder] = useState(null);
   const [remindHint, setRemindHint] = useState('');
+  const [pushState, setPushState] = useState('unknown');
+  const [passInput, setPassInput] = useState('');
+  const [passHint, setPassHint] = useState('');
   const stateRef = useRef(null);
   const undoTimer = useRef(null);
   const pushTimer = useRef(null);
+  const pullRef = useRef(null);
+  const pushInfo = useRef(null);
+  const pushChecked = useRef(false);
 
   const listId = state?.lists.some((list) => list.id === selected) ? selected : 'inbox';
 
@@ -85,14 +109,10 @@ export default function HomePage() {
 
   async function send(board) {
     try {
-      const res = await fetch('/api/board', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ board }),
-      });
+      const res = await api('/api/board', { method: 'PUT', body: { board } });
       const data = await res.json();
       if (!data.synced || !data.board) {
-        setSyncMode('device');
+        setSyncMode(modeFor(data.reason));
         return;
       }
       setSyncMode('synced');
@@ -109,12 +129,52 @@ export default function HomePage() {
     const today = todayKey();
     const due = remindersDue(board, today);
     if (due.length === 0) return;
+    notify(reminderMessage(due, today));
     let next = board;
-    for (const task of due) {
-      notify(task.dueAt < today ? `${task.title} is overdue` : `${task.title} is due today`, task.id);
-      next = updateTask(next, task.id, { remindedOn: task.dueAt });
-    }
+    for (const task of due) next = updateTask(next, task.id, { remindedOn: task.dueAt });
     apply(next);
+  }
+
+  async function preparePush() {
+    if (pushChecked.current) return;
+    pushChecked.current = true;
+    try {
+      const res = await api('/api/push');
+      pushInfo.current = await res.json();
+    } catch {
+      pushInfo.current = { enabled: false };
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') ensurePush();
+    else if (!pushInfo.current.enabled) setPushState('off');
+  }
+
+  async function ensurePush() {
+    const info = pushInfo.current;
+    if (!info?.enabled) {
+      setPushState('off');
+      return;
+    }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushState('unsupported');
+      return;
+    }
+    try {
+      const key = keyBytes(info.publicKey);
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && !sameKey(sub.options.applicationServerKey, key)) {
+        await sub.unsubscribe();
+        sub = null;
+      }
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      const res = await api('/api/push', {
+        method: 'POST',
+        body: { subscription: sub.toJSON(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+      });
+      setPushState(res.ok ? 'on' : 'off');
+    } catch {
+      setPushState('off');
+    }
   }
 
   useEffect(() => {
@@ -135,25 +195,30 @@ export default function HomePage() {
     let cancel = false;
     async function pull() {
       try {
-        const res = await fetch('/api/board', { cache: 'no-store' });
+        const res = await api('/api/board');
         const data = await res.json();
-        if (cancel) return;
+        if (cancel) return 'device';
         if (!data.synced) {
-          setSyncMode('device');
-          return;
+          const mode = modeFor(data.reason);
+          setSyncMode(mode);
+          return mode;
         }
         setSyncMode('synced');
+        preparePush();
         if (!data.board) {
           send(stateRef.current);
-          return;
+          return 'synced';
         }
         const merged = mergeBoards(stateRef.current, data.board);
         if (signature(merged) !== signature(stateRef.current)) apply(merged, { push: false });
         if (signature(merged) !== signature(normalizeBoard(data.board))) send(merged);
+        return 'synced';
       } catch {
         if (!cancel) setSyncMode('device');
+        return 'device';
       }
     }
+    pullRef.current = pull;
     pull();
     const timer = setInterval(pull, 8000);
     const reminderTimer = setInterval(() => checkReminders(), 60 * 1000);
@@ -276,6 +341,7 @@ export default function HomePage() {
     if (Notification.permission === 'default') await Notification.requestPermission();
     if (Notification.permission === 'granted') {
       setRemindHint('');
+      if (pushInfo.current?.enabled && pushState !== 'on') ensurePush();
       return true;
     }
     setRemindHint('Notifications are blocked for Daymark. Allow them in your browser settings to get reminders.');
@@ -346,6 +412,15 @@ export default function HomePage() {
     handle.addEventListener('pointerup', onUp);
   }
 
+  async function onUnlock(event) {
+    event.preventDefault();
+    savePasscode(passInput.trim());
+    setPassHint('');
+    const mode = await pullRef.current?.();
+    if (mode === 'locked') setPassHint("That passcode didn't match.");
+    else setPassInput('');
+  }
+
   async function onInstall() {
     if (!installEvent) return;
     installEvent.prompt();
@@ -362,6 +437,7 @@ export default function HomePage() {
   const openCount = state.tasks.filter((task) => task.listId === listId && !task.done).length;
   const remindDraft = (on) => toggleRemind(on, (value) => setDraft((current) => current && { ...current, remind: value }));
   const remindSheet = (on) => toggleRemind(on, (value) => setSheet((current) => current && { ...current, remind: value }));
+  const remindNote = pushState === 'on' ? REMIND_NOTE.push : REMIND_NOTE.open;
 
   function show(tasks) {
     if (!dragOrder || !tasks.every((task) => dragOrder.includes(task.id))) return tasks;
@@ -385,9 +461,21 @@ export default function HomePage() {
           </button>
         ) : null}
       </header>
-      <p className={syncMode === 'synced' ? 'status up' : 'status'}>
-        {syncMode === 'synced' ? 'Synced' : 'On this device'}
-      </p>
+      <p className={syncMode === 'synced' ? 'status up' : 'status'}>{STATUS_TEXT[syncMode]}</p>
+      {syncMode === 'locked' ? (
+        <form className="unlock" onSubmit={onUnlock}>
+          <input
+            type="password"
+            value={passInput}
+            onChange={(event) => setPassInput(event.target.value)}
+            placeholder="Passcode"
+            aria-label="Passcode"
+            autoComplete="current-password"
+          />
+          <button type="submit">Unlock</button>
+        </form>
+      ) : null}
+      {passHint ? <p className="hint tight">{passHint}</p> : null}
 
       <div className="lists">
         {state.lists.map((list) => (
@@ -453,6 +541,7 @@ export default function HomePage() {
                   stepFor={stepFor}
                   stepTitle={stepTitle}
                   remindHint={remindHint}
+                  remindNote={remindNote}
                   dragOrder={dragOrder}
                   onToggle={() => apply(setDone(state, task.id, !task.done))}
                   onDelete={() => onDeleteTask(task.id)}
@@ -495,6 +584,7 @@ export default function HomePage() {
                 stepFor={stepFor}
                 stepTitle={stepTitle}
                 remindHint={remindHint}
+                remindNote={remindNote}
                 dragOrder={dragOrder}
                 onToggle={() => apply(setDone(state, task.id, false))}
                 onDelete={() => onDeleteTask(task.id)}
@@ -533,6 +623,7 @@ export default function HomePage() {
           listName={currentList ? currentList.name : 'Inbox'}
           today={today}
           remindHint={remindHint}
+          remindNote={remindNote}
           onChange={setSheet}
           onRemind={remindSheet}
           onCancel={() => setSheet(null)}
@@ -543,7 +634,7 @@ export default function HomePage() {
   );
 }
 
-function AddSheet({ sheet, listName, today, remindHint, onChange, onRemind, onCancel, onConfirm }) {
+function AddSheet({ sheet, listName, today, remindHint, remindNote, onChange, onRemind, onCancel, onConfirm }) {
   const ref = useRef(null);
   useEffect(() => {
     ref.current?.focus();
@@ -582,7 +673,7 @@ function AddSheet({ sheet, listName, today, remindHint, onChange, onRemind, onCa
           min={today}
           onChange={(choice) => onChange({ ...sheet, ...choice, remind: choice.kind === 'none' ? false : sheet.remind })}
         />
-        <RemindToggle on={sheet.remind} disabled={!dueAt} onToggle={onRemind} />
+        <RemindToggle on={sheet.remind} disabled={!dueAt} note={remindNote} onToggle={onRemind} />
         {remindHint ? <p className="hint tight">{remindHint}</p> : null}
         <p className="label">Priority</p>
         <PriorityPicker value={sheet.priority} onChange={(priority) => onChange({ ...sheet, priority })} />
@@ -652,7 +743,7 @@ function PriorityPicker({ value, onChange }) {
   );
 }
 
-function RemindToggle({ on, disabled, onToggle }) {
+function RemindToggle({ on, disabled, note, onToggle }) {
   const checked = Boolean(on) && !disabled;
   return (
     <div className="remindbox">
@@ -666,7 +757,7 @@ function RemindToggle({ on, disabled, onToggle }) {
         Remind me
       </label>
       {disabled ? <p className="note">Choose a day to turn this on.</p> : null}
-      {checked ? <p className="note">{REMIND_NOTE}</p> : null}
+      {checked ? <p className="note">{note}</p> : null}
     </div>
   );
 }
@@ -726,6 +817,7 @@ function TaskRow({
   editing,
   draft,
   remindHint,
+  remindNote,
   dragOrder,
   child,
   onToggle,
@@ -772,7 +864,12 @@ function TaskRow({
                     onDraft({ ...draft, ...choice, remind: choice.kind === 'none' ? false : draft.remind })
                   }
                 />
-                <RemindToggle on={draft.remind} disabled={!resolveDue(draft, today)} onToggle={onRemind} />
+                <RemindToggle
+                  on={draft.remind}
+                  disabled={!resolveDue(draft, today)}
+                  note={remindNote}
+                  onToggle={onRemind}
+                />
                 <PriorityPicker value={draft.priority} onChange={(priority) => onDraft({ ...draft, priority })} />
               </>
             )}
@@ -827,11 +924,11 @@ function signature(board) {
   return JSON.stringify({ lists: board.lists, tasks: board.tasks, tombstones: board.tombstones });
 }
 
-function notify(body, tag) {
+function notify({ title, body, tag }) {
   const options = { body, tag, icon: '/icons/icon-192.png' };
   const direct = () => {
     try {
-      new Notification('Daymark', options);
+      new Notification(title, options);
     } catch {}
   };
   if (!navigator.serviceWorker) {
@@ -840,6 +937,33 @@ function notify(body, tag) {
   }
   navigator.serviceWorker
     .getRegistration()
-    .then((reg) => (reg ? reg.showNotification('Daymark', options) : direct()))
+    .then((reg) => (reg ? reg.showNotification(title, options) : direct()))
     .catch(direct);
+}
+
+function api(path, { method = 'GET', body } = {}) {
+  const headers = { 'x-daymark-passcode': encodeURIComponent(loadPasscode()) };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  return fetch(path, {
+    method,
+    headers,
+    cache: 'no-store',
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+function modeFor(reason) {
+  if (reason === 'locked' || reason === 'unset') return reason;
+  return 'device';
+}
+
+function keyBytes(base64) {
+  const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
+function sameKey(buffer, bytes) {
+  if (!buffer) return false;
+  const current = new Uint8Array(buffer);
+  return current.length === bytes.length && current.every((value, index) => value === bytes[index]);
 }

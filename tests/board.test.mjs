@@ -4,11 +4,13 @@ import {
   addList,
   addTask,
   deleteList,
+  dayInZone,
   deleteTask,
   dueChoice,
   emptyBoard,
   groupOpenTasks,
   mergeBoards,
+  reminderMessage,
   remindersDue,
   resolveDue,
   shiftDay,
@@ -85,6 +87,25 @@ test('a reminder fires from 9 AM on its day, once', () => {
   assert.equal(remindersDue(board, '2026-10-14', 0).length, 1);
   board = updateTask(board, board.tasks[0].id, { remindedOn: '2026-10-13' });
   assert.equal(remindersDue(board, '2026-10-13', 10).length, 0);
+});
+
+test('the daily job reads the day where each phone is', () => {
+  const night = new Date('2026-10-13T20:00:00Z');
+  assert.equal(dayInZone('Asia/Kolkata', night), '2026-10-14');
+  assert.equal(dayInZone('America/New_York', night), '2026-10-13');
+  assert.equal(dayInZone('Not/AZone', night).length, 10);
+});
+
+test('one reminder names the task; several lead with the most important', () => {
+  let board = addTask(emptyBoard(), { title: 'Pay rent', dueAt: '2026-10-12', remind: true });
+  assert.equal(reminderMessage(board.tasks, '2026-10-13').body, 'Pay rent is overdue');
+  board = addTask(board, { title: 'Call bank', dueAt: '2026-10-13', remind: true, priority: 'high' });
+  board = addTask(board, { title: 'Water plants', dueAt: '2026-10-13', remind: true });
+  board = addTask(board, { title: 'Book tickets', dueAt: '2026-10-13', remind: true });
+  assert.equal(
+    reminderMessage(board.tasks, '2026-10-13').body,
+    '4 tasks due: Call bank, Pay rent, Water plants, and 1 more',
+  );
 });
 
 test('higher priority sits first, and only known levels are kept', () => {

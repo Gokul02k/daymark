@@ -8,11 +8,12 @@
     "start": "next start",
     "engine": ".venv/bin/python -m engine.cli serve",
     "engine:test": ".venv/bin/python -m pytest engine/tests -q",
-    "test": "node --test tests/board.test.mjs"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/*.test.mjs"
   },
   "dependencies": {
     "next": "^14.2.15",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "web-push": "^3.6.7"
   }
 }
