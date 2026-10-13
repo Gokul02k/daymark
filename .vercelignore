@@ -1,0 +1,9 @@
+node_modules
+.next
+.venv
+engine/var
+__pycache__
+.pytest_cache
+*.pyc
+*.log
+.DS_Store

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" fill="none">
+  <rect width="960" height="560" rx="28" fill="#10140f"/>
+  <rect x="250" y="48" width="460" height="464" rx="24" fill="#1a2118" stroke="#2c3828"/>
+  <text x="282" y="108" fill="#e7f0e2" font-family="ui-sans-serif, system-ui, sans-serif" font-size="32" font-weight="700">Daymark</text>
+  <text x="282" y="138" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">2 open</text>
+  <rect x="282" y="164" width="292" height="48" rx="12" fill="#10140f" stroke="#2c3828"/>
+  <text x="300" y="194" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Add a task</text>
+  <rect x="586" y="164" width="92" height="48" rx="12" fill="#b6e38a"/>
+  <text x="614" y="194" fill="#10140f" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700">Add</text>
+  <rect x="282" y="232" width="396" height="112" rx="14" fill="#10140f" stroke="#2c3828"/>
+  <rect x="306" y="258" width="22" height="22" rx="6" stroke="#9aab94" stroke-width="2"/>
+  <text x="344" y="276" fill="#e7f0e2" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Buy milk</text>
+  <text x="598" y="276" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Delete</text>
+  <line x1="306" y1="288" x2="654" y2="288" stroke="#2c3828"/>
+  <rect x="306" y="306" width="22" height="22" rx="6" stroke="#9aab94" stroke-width="2"/>
+  <text x="344" y="324" fill="#e7f0e2" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Call home</text>
+  <text x="598" y="324" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Delete</text>
+  <text x="282" y="388" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5">DONE</text>
+  <rect x="282" y="404" width="396" height="64" rx="14" fill="#10140f" stroke="#2c3828"/>
+  <rect x="306" y="426" width="22" height="22" rx="6" fill="#b6e38a"/>
+  <text x="344" y="444" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" text-decoration="line-through">Write the README</text>
+  <text x="598" y="444" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Delete</text>
+</svg>

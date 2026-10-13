@@ -1,0 +1,7 @@
+# Daymark engine — Python 3.13
+# Install:  python3 -m venv .venv && .venv/bin/pip install -r engine/requirements.txt
+#
+# The engine itself is the standard library (sqlite3 + http.server). Pytest is
+# the only dependency until a later phase needs something else.
+
+pytest>=8.0
