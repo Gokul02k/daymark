@@ -125,14 +125,16 @@ h2 {
   background: transparent;
 }
 
-.delete {
+.rowbtn {
   flex: none;
   border: 0;
   background: transparent;
   color: var(--muted);
-  padding: 0 0.9rem;
+  padding: 0 0.55rem;
   min-height: 52px;
 }
+
+.rowbtn:last-child { padding-right: 0.9rem; }
 
 .box {
   display: block;
@@ -263,7 +265,6 @@ h2 {
 
 .row.dragging { opacity: 0.55; }
 
-.edit { display: flex; flex-direction: column; gap: 0.45rem; }
 .stepform { display: flex; gap: 0.4rem; margin: 0 0 0.6rem 2.6rem; }
 .stepform button {
   border: 0;
@@ -282,8 +283,7 @@ h2 {
   background: var(--bg);
   padding: 0.45rem 0.7rem;
 }
-.editactions { display: flex; gap: 0.75rem; align-items: center; }
-.editactions button[type='submit'], .undo button {
+.undo button {
   border: 0;
   background: var(--ok);
   color: var(--ink);
@@ -292,7 +292,7 @@ h2 {
   padding: 0 0.8rem;
   font-weight: 650;
 }
-.editactions button[type='submit']:disabled, .primary:disabled { opacity: 0.45; }
+.primary:disabled { opacity: 0.45; }
 .remind { display: flex; gap: 0.5rem; align-items: center; color: var(--text); }
 .remind input { width: 1.2rem; height: 1.2rem; accent-color: var(--ok); }
 .remind.off { opacity: 0.5; }

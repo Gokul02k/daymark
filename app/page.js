@@ -78,8 +78,6 @@ export default function HomePage() {
   const [installEvent, setInstallEvent] = useState(null);
   const [showIosHint, setShowIosHint] = useState(false);
   const [undo, setUndo] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [draft, setDraft] = useState(null);
   const [stepFor, setStepFor] = useState(null);
   const [stepTitle, setStepTitle] = useState('');
   const [naming, setNaming] = useState(false);
@@ -266,13 +264,37 @@ export default function HomePage() {
     undoTimer.current = setTimeout(() => setUndo(null), 6000);
   }
 
+  function openSheet(fields) {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setRemindHint('');
+    setSheet(fields);
+  }
+
   function onAdd(event) {
     event.preventDefault();
     if (!state || !cleanTitle(title)) return;
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    setEditing(null);
-    setRemindHint('');
-    setSheet({ title, kind: 'none', date: '', remind: false, remindAt: DEFAULT_REMIND_AT, priority: 'none' });
+    openSheet({
+      editId: null,
+      child: false,
+      title,
+      kind: 'none',
+      date: '',
+      remind: false,
+      remindAt: DEFAULT_REMIND_AT,
+      priority: 'none',
+    });
+  }
+
+  function startEdit(task) {
+    openSheet({
+      editId: task.id,
+      child: Boolean(task.parentId),
+      title: task.title,
+      ...dueChoice(task.dueAt, todayKey()),
+      remind: Boolean(task.remind),
+      remindAt: task.remindAt,
+      priority: task.priority,
+    });
   }
 
   function confirmSheet(event) {
@@ -280,19 +302,21 @@ export default function HomePage() {
     if (!sheet) return;
     const dueAt = resolveDue(sheet, todayKey());
     if (sheet.kind === 'pick' && !dueAt) return;
-    const next = addTask(state, {
-      listId,
+    const fields = {
       title: sheet.title,
       dueAt,
       remind: sheet.remind,
       remindAt: sheet.remindAt,
       remindTz: localZone(),
       priority: sheet.priority,
-    });
+    };
+    let next;
+    if (!sheet.editId) next = addTask(state, { listId, ...fields });
+    else next = updateTask(state, sheet.editId, sheet.child ? { title: sheet.title } : fields);
     if (next === state) return;
     apply(next);
+    if (!sheet.editId) setTitle('');
     setSheet(null);
-    setTitle('');
   }
 
   function onCreateList(event) {
@@ -318,7 +342,6 @@ export default function HomePage() {
     const result = deleteTask(state, id);
     if (result.removed.length === 0) return;
     apply(result.board);
-    if (editing === id) setEditing(null);
     offerUndo({ label: result.removed[0].title, tasks: result.removed });
   }
 
@@ -327,18 +350,6 @@ export default function HomePage() {
     const next = undo.tasks ? restoreTasks(state, undo.tasks) : restoreList(state, undo.listRemoval);
     apply(next);
     setUndo(null);
-  }
-
-  function startEdit(task) {
-    setEditing(task.id);
-    setDraft({
-      title: task.title,
-      ...dueChoice(task.dueAt, todayKey()),
-      remind: Boolean(task.remind),
-      remindAt: task.remindAt,
-      priority: task.priority,
-    });
-    setRemindHint('');
   }
 
   async function allowReminders() {
@@ -367,23 +378,6 @@ export default function HomePage() {
       return;
     }
     if (await allowReminders()) set(true);
-  }
-
-  function saveEdit(event) {
-    event.preventDefault();
-    const dueAt = resolveDue(draft, todayKey());
-    if (draft.kind === 'pick' && !dueAt) return;
-    const next = updateTask(state, editing, {
-      title: draft.title,
-      dueAt,
-      remind: draft.remind,
-      remindAt: draft.remindAt,
-      remindTz: draft.remind ? localZone() : undefined,
-      priority: draft.priority,
-    });
-    if (next === state) return;
-    apply(next);
-    setEditing(null);
   }
 
   function onStep(event) {
@@ -454,9 +448,9 @@ export default function HomePage() {
   const groups = groupOpenTasks(state, listId, today);
   const done = doneTasks(state, listId);
   const openCount = state.tasks.filter((task) => task.listId === listId && !task.done).length;
-  const remindTo = (setter) => (on) =>
+  const remindSheet = (on) =>
     toggleRemind(on, (value) =>
-      setter((current) =>
+      setSheet((current) =>
         current && {
           ...current,
           remind: value,
@@ -464,8 +458,6 @@ export default function HomePage() {
         },
       ),
     );
-  const remindDraft = remindTo(setDraft);
-  const remindSheet = remindTo(setSheet);
 
   function show(tasks) {
     if (!dragOrder || !tasks.every((task) => dragOrder.includes(task.id))) return tasks;
@@ -575,20 +567,12 @@ export default function HomePage() {
                   today={today}
                   siblings={groups[key]}
                   state={state}
-                  editing={editing}
-                  draft={draft}
                   stepFor={stepFor}
                   stepTitle={stepTitle}
-                  remindHint={remindHint}
-                  pushState={pushState}
                   dragOrder={dragOrder}
                   onToggle={() => apply(setDone(state, task.id, !task.done))}
                   onDelete={() => onDeleteTask(task.id)}
                   onEdit={() => startEdit(task)}
-                  onDraft={setDraft}
-                  onRemind={remindDraft}
-                  onSave={saveEdit}
-                  onCancel={() => setEditing(null)}
                   onDrag={startDrag}
                   onStepStart={() => {
                     setStepFor(task.id);
@@ -618,20 +602,12 @@ export default function HomePage() {
                 siblings={done}
                 state={state}
                 done
-                editing={editing}
-                draft={draft}
                 stepFor={stepFor}
                 stepTitle={stepTitle}
-                remindHint={remindHint}
-                pushState={pushState}
                 dragOrder={dragOrder}
                 onToggle={() => apply(setDone(state, task.id, false))}
                 onDelete={() => onDeleteTask(task.id)}
                 onEdit={() => startEdit(task)}
-                onDraft={setDraft}
-                onRemind={remindDraft}
-                onSave={saveEdit}
-                onCancel={() => setEditing(null)}
                 onDrag={startDrag}
                 onStepStart={() => {}}
                 onStepTitle={setStepTitle}
@@ -657,7 +633,7 @@ export default function HomePage() {
       {showIosHint ? <p className="hint">To install on iPhone, tap Share, then Add to Home Screen.</p> : null}
 
       {sheet ? (
-        <AddSheet
+        <TaskSheet
           sheet={sheet}
           listName={currentList ? currentList.name : 'Inbox'}
           today={today}
@@ -673,13 +649,15 @@ export default function HomePage() {
   );
 }
 
-function AddSheet({ sheet, listName, today, remindHint, pushState, onChange, onRemind, onCancel, onConfirm }) {
+function TaskSheet({ sheet, listName, today, remindHint, pushState, onChange, onRemind, onCancel, onConfirm }) {
   const ref = useRef(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
   const dueAt = resolveDue(sheet, today);
   const blocked = !cleanTitle(sheet.title) || (sheet.kind === 'pick' && !dueAt);
+  let heading = `New task in ${listName}`;
+  if (sheet.editId) heading = sheet.child ? 'Edit step' : 'Edit task';
   return (
     <div
       className="backdrop"
@@ -697,38 +675,44 @@ function AddSheet({ sheet, listName, today, remindHint, pushState, onChange, onR
         onSubmit={onConfirm}
       >
         <p id="sheet-title" className="sheet-title">
-          New task in {listName}
+          {heading}
         </p>
         <input
           className="field"
           value={sheet.title}
           onChange={(event) => onChange({ ...sheet, title: event.target.value })}
-          aria-label="Task"
+          aria-label={sheet.child ? 'Step' : 'Task'}
           maxLength={200}
         />
-        <p className="label">When is it due?</p>
-        <DuePicker
-          choice={sheet}
-          min={today}
-          onChange={(choice) => onChange({ ...sheet, ...choice, remind: choice.kind === 'none' ? false : sheet.remind })}
-        />
-        <RemindToggle
-          on={sheet.remind}
-          disabled={!dueAt}
-          time={sheet.remindAt}
-          pushState={pushState}
-          onToggle={onRemind}
-          onTime={(remindAt) => onChange({ ...sheet, remindAt })}
-        />
-        {remindHint ? <p className="hint tight">{remindHint}</p> : null}
-        <p className="label">Priority</p>
-        <PriorityPicker value={sheet.priority} onChange={(priority) => onChange({ ...sheet, priority })} />
+        {sheet.child ? null : (
+          <>
+            <p className="label">When is it due?</p>
+            <DuePicker
+              choice={sheet}
+              min={sheet.editId ? undefined : today}
+              onChange={(choice) =>
+                onChange({ ...sheet, ...choice, remind: choice.kind === 'none' ? false : sheet.remind })
+              }
+            />
+            <RemindToggle
+              on={sheet.remind}
+              disabled={!dueAt}
+              time={sheet.remindAt}
+              pushState={pushState}
+              onToggle={onRemind}
+              onTime={(remindAt) => onChange({ ...sheet, remindAt })}
+            />
+            {remindHint ? <p className="hint tight">{remindHint}</p> : null}
+            <p className="label">Priority</p>
+            <PriorityPicker value={sheet.priority} onChange={(priority) => onChange({ ...sheet, priority })} />
+          </>
+        )}
         <div className="sheet-actions">
           <button type="button" className="textbtn" onClick={onCancel}>
             Cancel
           </button>
           <button type="submit" className="primary" disabled={blocked}>
-            Add task
+            {sheet.editId ? 'Save' : 'Add task'}
           </button>
         </div>
       </form>
@@ -882,28 +866,8 @@ function TaskBlock(props) {
   );
 }
 
-function TaskRow({
-  task,
-  done,
-  today,
-  siblings,
-  editing,
-  draft,
-  remindHint,
-  pushState,
-  dragOrder,
-  child,
-  onToggle,
-  onDelete,
-  onEdit,
-  onDraft,
-  onRemind,
-  onSave,
-  onCancel,
-  onDrag,
-}) {
+function TaskRow({ task, done, today, siblings, dragOrder, onToggle, onDelete, onEdit, onDrag }) {
   const meta = rowMeta(task, today, done);
-  const editingThis = editing === task.id && draft;
   const mark = done ? null : PRIORITY_MARK[task.priority];
   const spoken = mark ? `${task.title}, ${task.priority} priority` : task.title;
   return (
@@ -920,62 +884,22 @@ function TaskRow({
         <span className="box" aria-hidden="true" />
       </button>
       <div className="body">
-        {editingThis ? (
-          <form className="edit" onSubmit={onSave}>
-            <input
-              className="field"
-              value={draft.title}
-              onChange={(event) => onDraft({ ...draft, title: event.target.value })}
-              aria-label="Task title"
-              maxLength={200}
-            />
-            {child ? null : (
-              <>
-                <DuePicker
-                  choice={draft}
-                  onChange={(choice) =>
-                    onDraft({ ...draft, ...choice, remind: choice.kind === 'none' ? false : draft.remind })
-                  }
-                />
-                <RemindToggle
-                  on={draft.remind}
-                  disabled={!resolveDue(draft, today)}
-                  time={draft.remindAt}
-                  pushState={pushState}
-                  onToggle={onRemind}
-                  onTime={(remindAt) => onDraft({ ...draft, remindAt })}
-                />
-                <PriorityPicker value={draft.priority} onChange={(priority) => onDraft({ ...draft, priority })} />
-              </>
-            )}
-            {remindHint ? <p className="hint tight">{remindHint}</p> : null}
-            <div className="editactions">
-              <button
-                type="submit"
-                disabled={!cleanTitle(draft.title) || (draft.kind === 'pick' && !resolveDue(draft, today))}
-              >
-                Save
-              </button>
-              <button type="button" className="textbtn" onClick={onCancel}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          <button type="button" className="titlebtn" onClick={onEdit}>
-            <span className={done ? 'title checked-title' : 'title'}>
-              {mark ? (
-                <span className={`pmark p-${task.priority}`} aria-hidden="true">
-                  {mark}
-                </span>
-              ) : null}
-              {task.title}
-            </span>
-            {meta.text ? <span className={meta.late ? 'meta late' : 'meta'}>{meta.text}</span> : null}
-          </button>
-        )}
+        <button type="button" className="titlebtn" onClick={onEdit}>
+          <span className={done ? 'title checked-title' : 'title'}>
+            {mark ? (
+              <span className={`pmark p-${task.priority}`} aria-hidden="true">
+                {mark}
+              </span>
+            ) : null}
+            {task.title}
+          </span>
+          {meta.text ? <span className={meta.late ? 'meta late' : 'meta'}>{meta.text}</span> : null}
+        </button>
       </div>
-      <button type="button" className="delete" aria-label={`Delete ${task.title}`} onClick={onDelete}>
+      <button type="button" className="rowbtn" aria-label={`Edit ${task.title}`} onClick={onEdit}>
+        Edit
+      </button>
+      <button type="button" className="rowbtn" aria-label={`Delete ${task.title}`} onClick={onDelete}>
         Delete
       </button>
     </div>

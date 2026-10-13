@@ -20,7 +20,7 @@
 |---|---|
 | **Add** | Type a task and tap Add. Daymark then asks when it is due (No date limit, Today, Tomorrow, or a day you pick), whether to remind you, and its priority. |
 | **Check** | Tap the box to finish a task. Tap it again to bring it back. Checking a task finishes its steps. |
-| **Edit** | Tap the title to rename it, change when it is due or its priority, or turn the reminder on or off. |
+| **Edit** | Tap Edit on a task, or its title, to change its name, when it is due, the reminder and its time, or its priority. A step only has a name to change. |
 | **Due** | Open tasks split into Overdue, Today, Later, and No date limit. Overdue and later tasks show their day under the title. |
 | **Priority** | Mark a task High, Medium, or Low. It shows !!!, !!, or ! before the title, and higher priority tasks sit at the top of their section. |
 | **Lists** | Inbox is the start. Add Work, Personal, or anything else, and switch with the chips. |
