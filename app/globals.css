@@ -156,3 +156,147 @@ h2 {
   margin: 1.5rem 0 0;
   font-size: 0.95rem;
 }
+
+.hint.tight { margin: 0.35rem 0 0; }
+
+.status {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.status.up { color: var(--ok); }
+
+.lists {
+  display: flex;
+  gap: 0.45rem;
+  overflow-x: auto;
+  margin: 1rem 0 0.35rem;
+  padding-bottom: 0.2rem;
+}
+
+.chip, .chipform input {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  min-height: 40px;
+  padding: 0.35rem 0.8rem;
+  white-space: nowrap;
+}
+
+.chip.on {
+  background: var(--ok);
+  color: var(--ink);
+  border-color: var(--ok);
+}
+
+.chipform input { width: 8rem; background: var(--panel); }
+
+.textbtn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0;
+  min-height: 36px;
+}
+
+.add { flex-wrap: wrap; }
+.add input[type='date'] {
+  min-height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0 0.6rem;
+}
+
+.block { display: block; }
+.tasks li.block + li.block { border-top: 1px solid var(--line); }
+
+.handle, .check {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  flex: none;
+}
+
+.handle {
+  padding: 0 0.2rem 0 0.55rem;
+  letter-spacing: -0.12em;
+  cursor: grab;
+  touch-action: none;
+}
+
+.check { padding: 0.9rem 0; }
+
+.body { flex: 1; min-width: 0; padding: 0.55rem 0; }
+
+.titlebtn {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.meta { color: var(--muted); font-size: 0.85rem; }
+.meta.late, .title.late { color: #e7a394; }
+.checked-title { color: var(--muted); text-decoration: line-through; }
+
+.row.dragging { opacity: 0.55; }
+
+.edit { display: flex; flex-direction: column; gap: 0.45rem; }
+.stepform { display: flex; gap: 0.4rem; margin: 0 0 0.6rem 2.6rem; }
+.stepform button {
+  border: 0;
+  background: var(--ok);
+  color: var(--ink);
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  font-weight: 650;
+}
+.chipform { display: flex; gap: 0.35rem; }
+.edit input, .stepform input {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 0.45rem 0.7rem;
+}
+.editactions { display: flex; gap: 0.75rem; align-items: center; }
+.editactions button[type='submit'], .undo button {
+  border: 0;
+  background: var(--ok);
+  color: var(--ink);
+  border-radius: 10px;
+  min-height: 40px;
+  padding: 0 0.8rem;
+  font-weight: 650;
+}
+.remind { display: flex; gap: 0.45rem; align-items: center; color: var(--muted); }
+
+.subs { list-style: none; margin: 0 0 0.2rem 1.6rem; padding: 0; }
+.step { margin: 0 0 0.55rem 2.6rem; }
+
+.undo {
+  position: fixed;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(28rem, calc(100% - 2rem));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  background: #243026;
+  border: 1px solid var(--line);
+}
+
+.has-undo { padding-bottom: 6rem; }

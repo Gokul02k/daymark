@@ -6,7 +6,7 @@
 
 <p align="center">
   A checklist you can install on your phone.<br>
-  Add a task, check it off, delete the ones that no longer matter.
+  Add a task, check it off, and pick up the same list on your phone.
 </p>
 
 <p align="center">
@@ -18,12 +18,24 @@
 
 | | |
 |---|---|
-| **Add** | Type a task and it lands at the top of the open list. |
-| **Check** | Tap a task to mark it done. Tap it again to bring it back. |
-| **Delete** | Each task has its own delete button. Only that task goes away. |
+| **Add** | Type a task, with a due date if it has one. |
+| **Check** | Tap the box to finish a task. Tap it again to bring it back. Checking a task finishes its steps. |
+| **Edit** | Tap the title to rename it, change the date, or turn on a reminder. |
+| **Due** | Open tasks split into Overdue, Today, Later, and No date. |
+| **Lists** | Inbox is the start. Add Work, Personal, or anything else, and switch with the chips. |
+| **Steps** | Add a step under a task when it is more than one action. |
+| **Reorder** | Drag the grip on a task to move it within its group. |
+| **Delete** | Each task has its own delete button. Undo sits at the bottom for a few seconds. |
+| **Remind** | A due task can notify you when you open Daymark, and while it stays open. On iPhone that only happens when the app is open. |
 | **Install** | Add it to your home screen. It opens like an app, with its own icon. |
 
-Tasks stay on the device you installed it on.
+## The same list in two places
+
+On this computer, `npm run dev` stores the list in one file, so every browser on that server sees the same tasks.
+
+The phone and the computer share a list when both open the deployed site and the project has a Vercel KV or Upstash database. Set `KV_REST_API_URL` and `KV_REST_API_TOKEN` in the Vercel project. The status line says **Synced**.
+
+Without that database, the status line says **On this device**. The list stays in that browser.
 
 ## Run it here
 

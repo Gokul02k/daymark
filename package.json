@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "engine": ".venv/bin/python -m engine.cli serve",
-    "engine:test": ".venv/bin/python -m pytest engine/tests -q"
+    "engine:test": ".venv/bin/python -m pytest engine/tests -q",
+    "test": "node --test tests/board.test.mjs"
   },
   "dependencies": {
     "next": "^14.2.15",

@@ -1,4 +1,4 @@
-const VERSION = 'daymark-v1';
+const VERSION = 'daymark-v2';
 const SHELL = `${VERSION}-shell`;
 const OFFLINE_URL = '/offline.html';
 
@@ -30,6 +30,11 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'skip-waiting') self.skipWaiting();
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow('/'));
 });
 
 self.addEventListener('fetch', (event) => {
