@@ -1,4 +1,4 @@
-const VERSION = 'daymark-v4';
+const VERSION = 'daymark-v6';
 const SHELL = `${VERSION}-shell`;
 const OFFLINE_URL = '/offline.html';
 

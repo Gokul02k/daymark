@@ -1,23 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" fill="none">
-  <rect width="960" height="560" rx="28" fill="#10140f"/>
-  <rect x="250" y="48" width="460" height="464" rx="24" fill="#1a2118" stroke="#2c3828"/>
-  <text x="282" y="108" fill="#e7f0e2" font-family="ui-sans-serif, system-ui, sans-serif" font-size="32" font-weight="700">Daymark</text>
-  <text x="282" y="138" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">2 open</text>
-  <rect x="282" y="164" width="292" height="48" rx="12" fill="#10140f" stroke="#2c3828"/>
-  <text x="300" y="194" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Add a task</text>
-  <rect x="586" y="164" width="92" height="48" rx="12" fill="#b6e38a"/>
-  <text x="614" y="194" fill="#10140f" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700">Add</text>
-  <rect x="282" y="232" width="396" height="112" rx="14" fill="#10140f" stroke="#2c3828"/>
-  <rect x="306" y="258" width="22" height="22" rx="6" stroke="#9aab94" stroke-width="2"/>
-  <text x="344" y="276" fill="#e7f0e2" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Buy milk</text>
-  <text x="598" y="276" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Delete</text>
-  <line x1="306" y1="288" x2="654" y2="288" stroke="#2c3828"/>
-  <rect x="306" y="306" width="22" height="22" rx="6" stroke="#9aab94" stroke-width="2"/>
-  <text x="344" y="324" fill="#e7f0e2" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Call home</text>
-  <text x="598" y="324" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Delete</text>
-  <text x="282" y="388" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5">DONE</text>
-  <rect x="282" y="404" width="396" height="64" rx="14" fill="#10140f" stroke="#2c3828"/>
-  <rect x="306" y="426" width="22" height="22" rx="6" fill="#b6e38a"/>
-  <text x="344" y="444" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" text-decoration="line-through">Write the README</text>
-  <text x="598" y="444" fill="#9aab94" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Delete</text>
+  <rect width="960" height="560" rx="28" fill="#f3efe6"/>
+  <rect x="250" y="36" width="460" height="488" rx="28" fill="#fffcf8" stroke="#e3dbcf"/>
+  <rect x="274" y="64" width="36" height="36" rx="10" fill="#1c1915"/>
+  <path d="M283 82.5l5 5 12-12" stroke="#f4fffd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="322" y="80" fill="#1c1915" font-family="Georgia, serif" font-size="28" font-weight="700">Daymark</text>
+  <text x="322" y="102" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">2 open</text>
+  <rect x="274" y="124" width="250" height="44" rx="22" fill="#fffcf8" stroke="#e3dbcf"/>
+  <text x="292" y="151" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">Add a task</text>
+  <rect x="534" y="124" width="84" height="44" rx="22" fill="#0f766e"/>
+  <text x="558" y="151" fill="#f4fffd" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700">Add</text>
+  <text x="274" y="196" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="1.4">TODAY</text>
+  <rect x="274" y="208" width="396" height="128" rx="16" fill="#fffcf8" stroke="#e3dbcf"/>
+  <rect x="298" y="232" width="22" height="22" rx="6" fill="#fff" stroke="#b7aea2" stroke-width="2"/>
+  <text x="336" y="248" fill="#1c1915" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Buy milk</text>
+  <line x1="298" y1="272" x2="646" y2="272" stroke="#e3dbcf"/>
+  <rect x="298" y="290" width="22" height="22" rx="6" fill="#fff" stroke="#b7aea2" stroke-width="2"/>
+  <text x="336" y="306" fill="#1c1915" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Call home</text>
+  <text x="274" y="368" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="1.4">DONE</text>
+  <rect x="274" y="380" width="396" height="56" rx="16" fill="#fffcf8" stroke="#e3dbcf"/>
+  <rect x="298" y="398" width="22" height="22" rx="6" fill="#0f766e"/>
+  <path d="M304 409l4 4 8-9" stroke="#f4fffd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="336" y="414" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" text-decoration="line-through">Write the README</text>
+  <rect x="274" y="452" width="396" height="52" rx="16" fill="#fffcf8" stroke="#e3dbcf"/>
+  <rect x="292" y="460" width="112" height="36" rx="12" fill="#d7f3ee"/>
+  <text x="322" y="483" fill="#0f766e" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">Tasks</text>
+  <text x="444" y="483" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">Habits</text>
+  <text x="560" y="483" fill="#6a6258" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700">Activity</text>
 </svg>

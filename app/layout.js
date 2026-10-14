@@ -1,5 +1,8 @@
+import Script from 'next/script';
 import ServiceWorkerRegistrar from './sw-register';
 import './globals.css';
+
+const themeBoot = `(function(){try{var t=localStorage.getItem('daymark-theme');if(t!=='dark'&&t!=='light')return;document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='dark'?'#12110f':'#f3efe6');}catch(e){}})();`;
 
 export const metadata = {
   title: 'Daymark',
@@ -8,7 +11,7 @@ export const metadata = {
   applicationName: 'Daymark',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
     title: 'Daymark',
   },
   icons: {
@@ -28,14 +31,15 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  themeColor: '#10140f',
+  themeColor: '#f3efe6',
   viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
+        <Script id="daymark-theme" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeBoot }} />
         {children}
         <ServiceWorkerRegistrar />
       </body>

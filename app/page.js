@@ -46,7 +46,9 @@ import {
 } from './lib/board';
 import {
   clearPass,
+  applyTheme,
   loadPass,
+  loadTheme,
   loadSelectedList,
   loadState,
   savePass,
@@ -109,6 +111,7 @@ export default function HomePage() {
   const [pushState, setPushState] = useState('unknown');
   const [passInput, setPassInput] = useState('');
   const [passHint, setPassHint] = useState('');
+  const [theme, setTheme] = useState('light');
   const stateRef = useRef(null);
   const undoTimer = useRef(null);
   const pushTimer = useRef(null);
@@ -208,6 +211,17 @@ export default function HomePage() {
       setPushState('off');
     }
   }
+
+  useEffect(() => {
+    const saved = document.documentElement.dataset.theme === 'dark' ? 'dark' : loadTheme();
+    setTheme(applyTheme(saved));
+    const onStorage = (event) => {
+      if (event.key !== 'daymark-theme') return;
+      setTheme(applyTheme(event.newValue));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     const local = loadState();
@@ -548,6 +562,14 @@ export default function HomePage() {
   const groups = groupOpenTasks(state, listId, today);
   const done = doneTasks(state, listId);
   const openCount = state.tasks.filter((task) => task.listId === listId && !task.done).length;
+  const planToday = todayPlan(state, today);
+  const habitLeft = Math.max(0, planToday.scheduled - planToday.done);
+  const listEmpty =
+    groups.overdue.length === 0 &&
+    groups.today.length === 0 &&
+    groups.later.length === 0 &&
+    groups.none.length === 0 &&
+    done.length === 0;
   const remindSheet = (on) =>
     toggleRemind(on, (value) =>
       setSheet((current) =>
@@ -568,18 +590,44 @@ export default function HomePage() {
   return (
     <main className={undo ? 'has-undo' : undefined}>
       <header className="top">
-        <div>
-          <h1>Daymark</h1>
-          <p className="lede">
-            {openCount === 0 ? 'Nothing open' : `${openCount} open`}
-            {groups.overdue.length > 0 ? ` · ${groups.overdue.length} overdue` : ''}
-          </p>
+        <div className="brand">
+          <span className="logo" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <rect width="32" height="32" rx="9" fill="currentColor" />
+              <path
+                d="M9 16.5l4.2 4.2L23 11"
+                fill="none"
+                stroke="var(--mark)"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <div>
+            <h1>Daymark</h1>
+            <p className="lede">
+              {openCount === 0 ? 'Nothing open' : `${openCount} open`}
+              {groups.overdue.length > 0 ? ` · ${groups.overdue.length} overdue` : ''}
+            </p>
+          </div>
         </div>
-        {installEvent ? (
-          <button type="button" className="install" onClick={onInstall}>
-            Install
+        <div className="top-actions">
+          <button
+            type="button"
+            className="themebtn"
+            aria-pressed={theme === 'dark'}
+            aria-label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'}
+            onClick={() => setTheme(applyTheme(theme === 'dark' ? 'light' : 'dark'))}
+          >
+            <ThemeIcon dark={theme === 'dark'} />
           </button>
-        ) : null}
+          {installEvent ? (
+            <button type="button" className="install" onClick={onInstall}>
+              Install
+            </button>
+          ) : null}
+        </div>
       </header>
       <p className={syncMode === 'synced' ? 'status up' : 'status'}>{STATUS_TEXT[syncMode]}</p>
       {syncMode === 'locked' ? (
@@ -607,25 +655,6 @@ export default function HomePage() {
         </form>
       ) : null}
       {passHint ? <p className="hint tight">{passHint}</p> : null}
-
-      <div className="views" role="tablist" aria-label="View">
-        {[
-          ['tasks', 'Tasks'],
-          ['habits', 'Habits'],
-          ['activity', 'Activity'],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={view === key}
-            className={view === key ? 'view on' : 'view'}
-            onClick={() => setView(key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
 
       {view === 'activity' ? (
         <ActivityView
@@ -696,6 +725,8 @@ export default function HomePage() {
         <button type="submit">Add</button>
       </form>
 
+      {listEmpty ? <p className="hint empty">Add a task, then pick when it is due.</p> : null}
+
       {GROUPS.map(([key, label]) =>
         groups[key].length === 0 ? null : (
           <section key={key}>
@@ -764,6 +795,27 @@ export default function HomePage() {
         </>
       )}
 
+      <nav className="dock" role="tablist" aria-label="View">
+        {[
+          ['tasks', 'Tasks', openCount, groups.overdue.length > 0],
+          ['habits', 'Habits', habitLeft, false],
+          ['activity', 'Activity', 0, false],
+        ].map(([key, label, badge, warn]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            className={view === key ? 'view on' : 'view'}
+            onClick={() => setView(key)}
+          >
+            <TabIcon name={key} />
+            <span>{label}</span>
+            {badge > 0 ? <span className={warn ? 'badge warn' : 'badge'}>{badge > 99 ? '99+' : badge}</span> : null}
+          </button>
+        ))}
+      </nav>
+
       {undo ? (
         <div className="undo">
           <span>Deleted {undo.label}</span>
@@ -810,10 +862,9 @@ const ENTRY_TAGS = { logged: 'Logged', added: 'Added', done: 'Done', habit: 'Hab
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 function HabitsView({ board, today, habitText, onHabitText, onAddHabit, onToggleHabit, onOpenHabit, onFinishTask }) {
-  const plan = todayPlan(board, today);
+  const standing = standingFor(board, today);
+  const plan = standing.plan;
   const week = Array.from({ length: 7 }, (_, index) => shiftDay(today, index - 6));
-  let heading = 'Today';
-  if (plan.scheduled > 0) heading += ` · ${plan.done} of ${plan.scheduled} done`;
   return (
     <>
       <form className="add" onSubmit={onAddHabit}>
@@ -828,10 +879,12 @@ function HabitsView({ board, today, habitText, onHabitText, onAddHabit, onToggle
         <button type="submit">Add</button>
       </form>
 
+      {standing.show ? <DayStanding standing={standing} /> : null}
+
       <section>
-        <h2>{heading}</h2>
+        <h2>Today</h2>
         {plan.habits.length === 0 ? (
-          <p className="hint tight">
+          <p className="hint empty">
             Add the things you want to do each day. Check them off as you go, and each one keeps a streak.
           </p>
         ) : (
@@ -984,13 +1037,16 @@ function HabitSheet({ board, draft, today, onChange, onToggleDay, onSave, onDele
         </div>
         <p className="stats">
           <span>
-            <strong>{stats.current}</strong>day streak
+            <strong>{stats.current}</strong>
+            <span>Day streak</span>
           </span>
           <span>
-            <strong>{stats.best}</strong>best
+            <strong>{stats.best}</strong>
+            <span>Best</span>
           </span>
           <span>
-            <strong>{stats.rate === null ? '–' : `${Math.round(stats.rate * 100)}%`}</strong>last 30 days
+            <strong>{stats.rate === null ? '–' : `${Math.round(stats.rate * 100)}%`}</strong>
+            <span>Last 30 days</span>
           </span>
         </p>
         <div className="cal" role="group" aria-label="Last five weeks">
@@ -1042,14 +1098,12 @@ function weekdayName(weekday) {
 function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }) {
   const week = activityWeek(board, today);
   const days = activityDays(board).slice(0, 30);
+  const standing = standingFor(board, today);
   const finished = week.reduce((sum, day) => sum + day.onTime + day.late, 0);
   const onTime = week.reduce((sum, day) => sum + day.onTime, 0);
   const logged = week.reduce((sum, day) => sum + day.logged, 0);
   const habits = week.reduce((sum, day) => sum + day.habits, 0);
-  let summary = `${finished} ${finished === 1 ? 'task' : 'tasks'} finished`;
-  if (finished > 0) summary += `, ${onTime} on time (${Math.round((onTime * 100) / finished)}%)`;
-  summary += `. ${habits} ${habits === 1 ? 'habit' : 'habits'} checked`;
-  summary += `, ${logged} ${logged === 1 ? 'activity' : 'activities'} logged.`;
+  const quiet = week.every((day) => day.onTime + day.late + day.habits + day.logged === 0);
   return (
     <>
       <form className="add" onSubmit={onLog}>
@@ -1065,7 +1119,9 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
       </form>
 
       <section className="panel">
-        <h2>Last 7 days</h2>
+        <h2>Today</h2>
+        <DayStanding standing={standing} />
+        <h2 className="again">Last 7 days</h2>
         <WeekChart week={week} today={today} />
         <div className="legend">
           <span>
@@ -1085,38 +1141,63 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
             Logged
           </span>
         </div>
-        <p className="summary">{summary}</p>
+        <dl className="meters">
+          <div>
+            <dt>Finished</dt>
+            <dd>{finished}</dd>
+          </div>
+          <div>
+            <dt>On time</dt>
+            <dd>{finished ? `${Math.round((onTime * 100) / finished)}%` : '—'}</dd>
+          </div>
+          <div>
+            <dt>Habits</dt>
+            <dd>{habits}</dd>
+          </div>
+          <div>
+            <dt>Logged</dt>
+            <dd>{logged}</dd>
+          </div>
+        </dl>
+        {quiet ? (
+          <p className="note">The last 7 days fill in as you check habits, finish tasks, and log what you did.</p>
+        ) : null}
       </section>
 
       {days.length === 0 ? (
-        <p className="hint">Nothing yet. Log what you did, or finish a task, and it shows up here.</p>
+        <p className="hint empty">Log what you did, or finish a task, and it shows up here.</p>
       ) : null}
       {days.map((day) => (
         <section key={day}>
           <h2>{dayHeading(day, today)}</h2>
-          <ul className="tasks">
+          <ul className="timeline">
             {dayActivity(board, day).map((item) => (
               <li key={`${item.kind}-${item.id}`} className="logrow">
-                <span className={`tag ${item.kind}`}>{ENTRY_TAGS[item.kind]}</span>
+                <span className={`mark ${item.kind}${item.late ? ' late' : ''}`} aria-hidden="true" />
                 <span className="logtext">
-                  {item.text}
+                  <span className="logmain">
+                    <span className={`tag ${item.kind}`}>{ENTRY_TAGS[item.kind]}</span>
+                    {item.text}
+                  </span>
                   {item.kind === 'done' ? (
                     <span className={item.late ? 'when late' : 'when ok'}>
-                      {item.late ? ` · ${item.late} ${item.late === 1 ? 'day' : 'days'} late` : ' · on time'}
+                      {item.late ? `${item.late} ${item.late === 1 ? 'day' : 'days'} late` : 'On time'}
                     </span>
                   ) : null}
                 </span>
-                <span className="logtime">{todayKey(new Date(item.at)) === day ? timeOf(item.at) : ''}</span>
-                {item.kind === 'logged' ? (
-                  <button
-                    type="button"
-                    className="rowbtn"
-                    aria-label={`Delete ${item.text}`}
-                    onClick={() => onDeleteEntry(item.id)}
-                  >
-                    Delete
-                  </button>
-                ) : null}
+                <span className="logend">
+                  <span className="logtime">{todayKey(new Date(item.at)) === day ? timeOf(item.at) : ''}</span>
+                  {item.kind === 'logged' ? (
+                    <button
+                      type="button"
+                      className="rowbtn"
+                      aria-label={`Delete ${item.text}`}
+                      onClick={() => onDeleteEntry(item.id)}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                </span>
               </li>
             ))}
           </ul>
@@ -1127,36 +1208,200 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
 }
 
 function WeekChart({ week, today }) {
-  const top = Math.max(1, ...week.map((day) => Math.max(day.onTime + day.late, day.habits, day.logged)));
-  const height = (count) => `${(count / top) * 100}%`;
+  const totals = week.map((day) => day.onTime + day.late + day.habits + day.logged);
+  const raw = Math.max(0, ...totals);
+  const top = scaleTop(Math.max(1, raw));
+  const plot = 132;
+  const height = (count) => (count > 0 ? Math.max(6, Math.round((count / top) * plot)) : 0);
+  const ticks = raw === 0 ? [0] : ticksFor(top);
   const label = week
     .map(
       (day) =>
-        `${weekday(day.day)}: ${day.onTime} on time, ${day.late} late, ${day.habits} habits, ${day.logged} logged`,
+        `${weekday(day.day)} ${Number(day.day.slice(8))}: ${day.onTime} on time, ${day.late} late, ${day.habits} habits, ${day.logged} logged`,
     )
     .join('; ');
   return (
-    <div className="chart" role="img" aria-label={label}>
-      {week.map((day) => (
-        <div key={day.day} className={day.day === today ? 'col today' : 'col'}>
-          <div className="bars">
-            <div className="bar" style={{ height: height(day.onTime + day.late) }}>
-              <span className="seg late" style={{ flexGrow: day.late }} />
-              <span className="seg ontime" style={{ flexGrow: day.onTime }} />
+    <div className="chart" role="img" aria-label={label} style={{ '--plot': `${plot}px` }}>
+      <div className="plot">
+        <div className={ticks.length === 1 ? 'grid solo' : 'grid'} aria-hidden="true">
+          {ticks.map((tick) => (
+            <div key={tick} className={tick === 0 ? 'gridline axis' : 'gridline'}>
+              <span>{tick}</span>
             </div>
-            <div className="bar habit" style={{ height: height(day.habits) }} />
-            <div className="bar logged" style={{ height: height(day.logged) }} />
-          </div>
-          <span className="daylabel">{weekday(day.day)}</span>
+          ))}
         </div>
-      ))}
+        <div className="cols">
+          {week.map((day, index) => {
+            const parts = [
+              ['logged', day.logged],
+              ['habit', day.habits],
+              ['late', day.late],
+              ['ontime', day.onTime],
+            ].filter(([, count]) => count > 0);
+            return (
+              <div key={day.day} className={day.day === today ? 'col today' : 'col'}>
+                <span className="count">{totals[index] || ''}</span>
+                <div className="bars">
+                  <div className="bar stack" style={{ height: height(totals[index]) }}>
+                    {parts.map(([kind, count]) => (
+                      <span key={kind} className={`seg ${kind}`} style={{ flexGrow: count }} />
+                    ))}
+                  </div>
+                </div>
+                <span className="daylabel">
+                  <span className="dow">{weekday(day.day, 'narrow')}</span>
+                  <span className="dom">{Number(day.day.slice(8))}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
 
-function weekday(key) {
+function scaleTop(max) {
+  if (max <= 4) return max;
+  const pow = 10 ** Math.floor(Math.log10(max));
+  const n = max / pow;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * pow;
+}
+
+function ticksFor(top) {
+  if (top <= 1) return [1, 0];
+  if (top <= 4) return Array.from({ length: top + 1 }, (_, index) => top - index);
+  const mid = top / 2;
+  return Number.isInteger(mid) ? [top, mid, 0] : [top, 0];
+}
+
+function standingFor(board, today) {
+  const plan = todayPlan(board, today);
+  const todayRow = activityWeek(board, today).find((day) => day.day === today);
+  const tasksDone = todayRow ? todayRow.onTime + todayRow.late : 0;
+  const tasksOpen = plan.tasks.length;
+  let habitsCaption = 'No habits yet';
+  if (plan.habits.length > 0) habitsCaption = plan.scheduled ? `${plan.done} of ${plan.scheduled}` : 'Rest day';
+  const taskMax = tasksDone + tasksOpen;
+  let tasksCaption = 'None due';
+  if (taskMax > 0) tasksCaption = `${tasksDone} done${tasksOpen ? ` · ${tasksOpen} left` : ''}`;
+  return {
+    plan,
+    show: plan.habits.length > 0 || tasksOpen > 0 || tasksDone > 0,
+    habitsDone: plan.done,
+    habitsTotal: plan.scheduled,
+    habitsCaption,
+    tasksDone,
+    tasksOpen,
+    tasksCaption,
+  };
+}
+
+function DayStanding({ standing }) {
+  return (
+    <div className="daybars">
+      <ProgressBar
+        label="Habits"
+        tone="habit"
+        value={standing.habitsDone}
+        max={standing.habitsTotal}
+        caption={standing.habitsCaption}
+      />
+      <ProgressBar
+        label="Tasks"
+        tone="work"
+        value={standing.tasksDone}
+        max={standing.tasksDone + standing.tasksOpen}
+        caption={standing.tasksCaption}
+      />
+    </div>
+  );
+}
+
+function ProgressBar({ label, tone, value, max, caption }) {
+  const pct = max > 0 ? Math.round((Math.min(value, max) / max) * 100) : 0;
+  const width = pct > 0 ? Math.max(pct, 6) : 0;
+  const meter =
+    max > 0
+      ? {
+          role: 'meter',
+          'aria-valuemin': 0,
+          'aria-valuemax': max,
+          'aria-valuenow': Math.min(value, max),
+          'aria-label': `${label}, ${caption}`,
+        }
+      : { 'aria-label': `${label}, ${caption}` };
+  return (
+    <div className="progress">
+      <div className="progress-top">
+        <span>{label}</span>
+        <strong>{caption}</strong>
+      </div>
+      <div className={`track ${tone}`} {...meter}>
+        <span style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ThemeIcon({ dark }) {
+  const pen = {
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  };
+  if (dark) {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" {...pen} />
+        <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" {...pen} />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" {...pen} />
+    </svg>
+  );
+}
+
+function TabIcon({ name }) {
+  const pen = {
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  };
+  if (name === 'habits') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8" {...pen} />
+        <path d="M8.5 12.2l2.2 2.2 4.8-5" {...pen} />
+      </svg>
+    );
+  }
+  if (name === 'activity') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19V10M10 19V5M16 19v-6M20 19H3" {...pen} />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="4" width="16" height="16" rx="4" {...pen} />
+      <path d="M8 12.2l2.4 2.4L16.2 9" {...pen} />
+    </svg>
+  );
+}
+
+function weekday(key, width = 'short') {
   const [year, month, day] = key.split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'short' });
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: width });
 }
 
 function dayHeading(day, today) {
