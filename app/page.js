@@ -2,12 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  activityDays,
+  activityWeek,
+  addEntry,
   addList,
   addTask,
   childrenOf,
   cleanTitle,
   DEFAULT_REMIND_AT,
+  dayActivity,
   defaultRemindAt,
+  deleteEntry,
   deleteList,
   deleteTask,
   doneTasks,
@@ -20,10 +25,12 @@ import {
   remindersDue,
   reorderTasks,
   resolveDue,
+  restoreEntries,
   restoreList,
   restoreTasks,
   sameBand,
   setDone,
+  shiftDay,
   todayKey,
   updateTask,
 } from './lib/board';
@@ -74,6 +81,8 @@ export default function HomePage() {
   const [state, setState] = useState(null);
   const [selected, setSelected] = useState('inbox');
   const [title, setTitle] = useState('');
+  const [view, setView] = useState('tasks');
+  const [logText, setLogText] = useState('');
   const [sheet, setSheet] = useState(null);
   const [syncMode, setSyncMode] = useState('device');
   const [installEvent, setInstallEvent] = useState(null);
@@ -355,9 +364,27 @@ export default function HomePage() {
 
   function onUndo() {
     if (!undo || !state) return;
-    const next = undo.tasks ? restoreTasks(state, undo.tasks) : restoreList(state, undo.listRemoval);
+    let next;
+    if (undo.tasks) next = restoreTasks(state, undo.tasks);
+    else if (undo.entries) next = restoreEntries(state, undo.entries);
+    else next = restoreList(state, undo.listRemoval);
     apply(next);
     setUndo(null);
+  }
+
+  function onLog(event) {
+    event.preventDefault();
+    const next = addEntry(state, logText);
+    if (next === state) return;
+    apply(next);
+    setLogText('');
+  }
+
+  function onDeleteEntry(id) {
+    const result = deleteEntry(state, id);
+    if (result.removed.length === 0) return;
+    apply(result.board);
+    offerUndo({ label: result.removed[0].text, entries: result.removed });
   }
 
   async function allowReminders() {
@@ -532,6 +559,35 @@ export default function HomePage() {
       ) : null}
       {passHint ? <p className="hint tight">{passHint}</p> : null}
 
+      <div className="views" role="tablist" aria-label="View">
+        {[
+          ['tasks', 'Tasks'],
+          ['activity', 'Activity'],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view === key}
+            className={view === key ? 'view on' : 'view'}
+            onClick={() => setView(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'activity' ? (
+        <ActivityView
+          board={state}
+          today={today}
+          logText={logText}
+          onLogText={setLogText}
+          onLog={onLog}
+          onDeleteEntry={onDeleteEntry}
+        />
+      ) : (
+        <>
       <div className="lists">
         {state.lists.map((list) => (
           <button
@@ -644,6 +700,8 @@ export default function HomePage() {
           </ul>
         </section>
       ) : null}
+        </>
+      )}
 
       {undo ? (
         <div className="undo">
@@ -671,6 +729,133 @@ export default function HomePage() {
       ) : null}
     </main>
   );
+}
+
+const ENTRY_TAGS = { logged: 'Logged', added: 'Added', done: 'Done' };
+
+function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }) {
+  const week = activityWeek(board, today);
+  const days = activityDays(board).slice(0, 30);
+  const finished = week.reduce((sum, day) => sum + day.onTime + day.late, 0);
+  const onTime = week.reduce((sum, day) => sum + day.onTime, 0);
+  const logged = week.reduce((sum, day) => sum + day.logged, 0);
+  let summary = `${finished} ${finished === 1 ? 'task' : 'tasks'} finished`;
+  if (finished > 0) summary += `, ${onTime} on time (${Math.round((onTime * 100) / finished)}%)`;
+  summary += `. ${logged} ${logged === 1 ? 'activity' : 'activities'} logged.`;
+  return (
+    <>
+      <form className="add" onSubmit={onLog}>
+        <input
+          value={logText}
+          onChange={(event) => onLogText(event.target.value)}
+          placeholder="Log something you did"
+          aria-label="Activity"
+          enterKeyHint="done"
+          maxLength={200}
+        />
+        <button type="submit">Log</button>
+      </form>
+
+      <section className="panel">
+        <h2>Last 7 days</h2>
+        <WeekChart week={week} today={today} />
+        <div className="legend">
+          <span>
+            <i className="key ontime" />
+            On time
+          </span>
+          <span>
+            <i className="key late" />
+            Late
+          </span>
+          <span>
+            <i className="key logged" />
+            Logged
+          </span>
+        </div>
+        <p className="summary">{summary}</p>
+      </section>
+
+      {days.length === 0 ? (
+        <p className="hint">Nothing yet. Log what you did, or finish a task, and it shows up here.</p>
+      ) : null}
+      {days.map((day) => (
+        <section key={day}>
+          <h2>{dayHeading(day, today)}</h2>
+          <ul className="tasks">
+            {dayActivity(board, day).map((item) => (
+              <li key={`${item.kind}-${item.id}`} className="logrow">
+                <span className={`tag ${item.kind}`}>{ENTRY_TAGS[item.kind]}</span>
+                <span className="logtext">
+                  {item.text}
+                  {item.kind === 'done' ? (
+                    <span className={item.late ? 'when late' : 'when ok'}>
+                      {item.late ? ` · ${item.late} ${item.late === 1 ? 'day' : 'days'} late` : ' · on time'}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="logtime">{timeOf(item.at)}</span>
+                {item.kind === 'logged' ? (
+                  <button
+                    type="button"
+                    className="rowbtn"
+                    aria-label={`Delete ${item.text}`}
+                    onClick={() => onDeleteEntry(item.id)}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </>
+  );
+}
+
+function WeekChart({ week, today }) {
+  const top = Math.max(1, ...week.map((day) => Math.max(day.onTime + day.late, day.logged)));
+  const height = (count) => `${(count / top) * 100}%`;
+  const label = week
+    .map((day) => `${weekday(day.day)}: ${day.onTime} on time, ${day.late} late, ${day.logged} logged`)
+    .join('; ');
+  return (
+    <div className="chart" role="img" aria-label={label}>
+      {week.map((day) => (
+        <div key={day.day} className={day.day === today ? 'col today' : 'col'}>
+          <div className="bars">
+            <div className="bar" style={{ height: height(day.onTime + day.late) }}>
+              <span className="seg late" style={{ flexGrow: day.late }} />
+              <span className="seg ontime" style={{ flexGrow: day.onTime }} />
+            </div>
+            <div className="bar logged" style={{ height: height(day.logged) }} />
+          </div>
+          <span className="daylabel">{weekday(day.day)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function weekday(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'short' });
+}
+
+function dayHeading(day, today) {
+  if (day === today) return 'Today';
+  if (day === shiftDay(today, -1)) return 'Yesterday';
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year, month - 1, date).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function timeOf(iso) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 function TaskSheet({ sheet, listName, today, remindHint, pushState, onChange, onRemind, onCancel, onConfirm }) {
@@ -944,7 +1129,12 @@ function shortDate(key) {
 }
 
 function signature(board) {
-  return JSON.stringify({ lists: board.lists, tasks: board.tasks, tombstones: board.tombstones });
+  return JSON.stringify({
+    lists: board.lists,
+    tasks: board.tasks,
+    entries: board.entries,
+    tombstones: board.tombstones,
+  });
 }
 
 function notify({ title, body, tag }) {

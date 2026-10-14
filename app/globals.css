@@ -193,6 +193,89 @@ h2 {
   font-weight: 650;
 }
 
+.views {
+  display: flex;
+  gap: 0.25rem;
+  width: fit-content;
+  margin: 0.9rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.view {
+  min-height: 36px;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.view.on { background: #2b3a2c; color: var(--text); }
+
+.panel {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.panel h2 { margin: 0 0 0.8rem; }
+
+.chart {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.35rem;
+  height: 9.5rem;
+}
+
+.col { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; height: 100%; }
+
+.bars {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bar {
+  width: 38%;
+  max-width: 14px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.seg { display: block; flex-basis: 0; }
+.seg.ontime, .key.ontime { background: var(--ok); }
+.seg.late, .key.late { background: #e8c170; }
+.bar.logged, .key.logged { background: #86b3ef; }
+
+.daylabel { font-size: 0.75rem; color: var(--muted); }
+.col.today .daylabel { color: var(--text); font-weight: 650; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.8rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.key { display: inline-block; width: 0.6rem; height: 0.6rem; margin-right: 0.35rem; border-radius: 2px; }
+.summary { margin: 0.5rem 0 0; }
+
+.logrow { display: flex; align-items: center; gap: 0.6rem; min-height: 48px; padding: 0.55rem 0 0.55rem 0.9rem; }
+.logrow:not(:has(.rowbtn)) { padding-right: 0.9rem; }
+.tag { flex: none; padding: 0.12rem 0.45rem; border-radius: 6px; font-size: 0.75rem; font-weight: 650; }
+.tag.logged { background: rgba(134, 179, 239, 0.16); color: #86b3ef; }
+.tag.added { background: rgba(154, 171, 148, 0.16); color: var(--muted); }
+.tag.done { background: rgba(182, 227, 138, 0.16); color: var(--ok); }
+.logtext { flex: 1; min-width: 0; }
+.logtime { flex: none; color: var(--muted); font-size: 0.85rem; }
+.when { font-size: 0.85rem; }
+.when.ok { color: var(--ok); }
+.when.late { color: #e8c170; }
+
 .lists {
   display: flex;
   gap: 0.45rem;

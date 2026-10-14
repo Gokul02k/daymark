@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  activityDays,
+  activityWeek,
+  addEntry,
   addList,
   addTask,
+  dayActivity,
+  deleteEntry,
+  restoreEntries,
   deleteList,
   dayInZone,
   defaultRemindAt,
@@ -163,6 +169,50 @@ test('higher priority sits first, and only known levels are kept', () => {
   assert.deepEqual(order(), ['High', 'Plain', 'Low', 'Odd']);
   board = addTask(board, { title: 'Step', parentId: plain.id, priority: 'high' });
   assert.equal(board.tasks.find((task) => task.title === 'Step').priority, 'none');
+});
+
+const utcDay = (iso) => iso.slice(0, 10);
+
+function at(board, id, fields) {
+  return { ...board, tasks: board.tasks.map((task) => (task.id === id ? { ...task, ...fields } : task)) };
+}
+
+test('a day shows what was logged, added, and finished, and whether it was on time', () => {
+  let board = addEntry(emptyBoard(), 'Gym 1 hour', '2026-10-12T02:00:00Z');
+  board = addTask(board, { title: 'Pay rent', dueAt: '2026-10-10' });
+  board = addTask(board, { title: 'Book tickets', dueAt: '2026-10-12' });
+  const [rent, tickets] = board.tasks;
+  board = at(board, rent.id, { createdAt: '2026-10-09T05:00:00Z', done: true, completedAt: '2026-10-12T09:00:00Z' });
+  board = at(board, tickets.id, { createdAt: '2026-10-12T01:00:00Z', done: true, completedAt: '2026-10-12T10:00:00Z' });
+
+  const day = dayActivity(board, '2026-10-12', utcDay);
+  assert.deepEqual(
+    day.map((item) => [item.kind, item.text, item.late]),
+    [
+      ['added', 'Book tickets', undefined],
+      ['logged', 'Gym 1 hour', undefined],
+      ['done', 'Pay rent', 2],
+      ['done', 'Book tickets', 0],
+    ],
+  );
+  assert.deepEqual(activityDays(board, utcDay), ['2026-10-12', '2026-10-09']);
+
+  const week = activityWeek(board, '2026-10-13', 7, utcDay);
+  assert.equal(week.length, 7);
+  assert.equal(week[0].day, '2026-10-07');
+  assert.deepEqual(week[5], { day: '2026-10-12', onTime: 1, late: 1, logged: 1 });
+  assert.deepEqual(week[6], { day: '2026-10-13', onTime: 0, late: 0, logged: 0 });
+});
+
+test('a logged activity syncs, can be deleted, and comes back with undo', () => {
+  const start = addEntry(emptyBoard(), 'Read 20 pages', '2026-10-12T15:00:00Z');
+  const phone = addEntry(start, 'Walk', '2026-10-12T16:00:00Z');
+  const { board: laptop, removed } = deleteEntry(start, start.entries[0].id);
+  const merged = mergeBoards(phone, laptop);
+  assert.deepEqual(merged.entries.map((entry) => entry.text), ['Walk']);
+  const restored = restoreEntries(laptop, removed);
+  assert.deepEqual(restored.entries.map((entry) => entry.text), ['Read 20 pages']);
+  assert.equal(addEntry(start, '   '), start);
 });
 
 test('two devices keep a new task and a deletion', () => {

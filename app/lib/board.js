@@ -53,6 +53,7 @@ export function emptyBoard() {
   return {
     lists: [{ id: 'inbox', name: 'Inbox', createdAt: new Date().toISOString(), updatedAt: new Date(0).toISOString() }],
     tasks: [],
+    entries: [],
     tombstones: [],
     updatedAt: new Date(0).toISOString(),
   };
@@ -93,6 +94,16 @@ export function normalizeBoard(raw) {
       completedAt: task.completedAt || null,
     }));
 
+  const entries = (Array.isArray(base.entries) ? base.entries : [])
+    .filter((entry) => entry && entry.id && cleanTitle(entry.text) && !Number.isNaN(Date.parse(entry.at)))
+    .map((entry) => ({
+      id: String(entry.id),
+      text: cleanTitle(entry.text),
+      at: new Date(entry.at).toISOString(),
+      createdAt: entry.createdAt || entry.at,
+      updatedAt: entry.updatedAt || entry.createdAt || entry.at,
+    }));
+
   const tombstones = (Array.isArray(base.tombstones) ? base.tombstones : [])
     .filter((item) => item && item.id && item.deletedAt)
     .map((item) => ({ id: String(item.id), deletedAt: String(item.deletedAt) }));
@@ -100,6 +111,7 @@ export function normalizeBoard(raw) {
   return {
     lists: cleanLists,
     tasks,
+    entries,
     tombstones,
     updatedAt: base.updatedAt || new Date(0).toISOString(),
   };
@@ -318,6 +330,42 @@ export function restoreTasks(board, removed) {
   });
 }
 
+export function addEntry(board, text, at = new Date()) {
+  const clean = cleanTitle(text);
+  if (!clean) return board;
+  const createdAt = stamp();
+  const entry = { id: crypto.randomUUID(), text: clean, at: new Date(at).toISOString(), createdAt, updatedAt: createdAt };
+  return touch({ ...board, entries: [...(board.entries || []), entry] });
+}
+
+export function deleteEntry(board, id) {
+  const removed = (board.entries || []).filter((entry) => entry.id === id);
+  if (removed.length === 0) return { board, removed };
+  return {
+    board: touch({
+      ...board,
+      entries: board.entries.filter((entry) => entry.id !== id),
+      tombstones: bury(board.tombstones, [id]),
+    }),
+    removed,
+  };
+}
+
+export function restoreEntries(board, removed) {
+  if (!removed?.length) return board;
+  const ids = new Set((board.entries || []).map((entry) => entry.id));
+  const revived = stamp();
+  const back = new Set(removed.map((entry) => entry.id));
+  return touch({
+    ...board,
+    entries: [
+      ...(board.entries || []),
+      ...removed.filter((entry) => !ids.has(entry.id)).map((entry) => ({ ...entry, updatedAt: revived })),
+    ],
+    tombstones: (board.tombstones || []).filter((item) => !back.has(item.id)),
+  });
+}
+
 export function reorderTasks(board, orderedIds) {
   const rank = new Map(orderedIds.map((id, index) => [id, orderedIds.length - index]));
   const when = stamp();
@@ -353,10 +401,12 @@ export function mergeBoards(left, right) {
   const tombstones = [...tombMap.values()];
   const lists = mergeById(a.lists, b.lists, tombstones);
   const tasks = mergeById(a.tasks, b.tasks, tombstones);
-  const live = new Set([...lists, ...tasks].map((record) => record.id));
+  const entries = mergeById(a.entries, b.entries, tombstones);
+  const live = new Set([...lists, ...tasks, ...entries].map((record) => record.id));
   return {
     lists,
     tasks,
+    entries,
     tombstones: tombstones.filter((tomb) => !live.has(tomb.id)),
     updatedAt: a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt,
   };
@@ -500,4 +550,66 @@ export function remindersForDay(board, today = todayKey()) {
 export function defaultRemindAt(dueAt, now = new Date()) {
   if (dueAt !== todayKey(now) || now.getHours() < 9) return DEFAULT_REMIND_AT;
   return `${String(Math.min(now.getHours() + 1, 23)).padStart(2, '0')}:00`;
+}
+
+const localDay = (iso) => todayKey(new Date(iso));
+
+export function dayDiff(from, to) {
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
+}
+
+/** Days past the due day it was finished on. 0 means on time, including tasks with no date. */
+export function daysLate(task, dayOf = localDay) {
+  if (!task.dueAt || !task.completedAt) return 0;
+  return Math.max(0, dayDiff(task.dueAt, dayOf(task.completedAt)));
+}
+
+function finished(board) {
+  return board.tasks.filter((task) => !task.parentId && task.done && task.completedAt);
+}
+
+/** Everything that happened on one day, oldest first. */
+export function dayActivity(board, day, dayOf = localDay) {
+  const top = board.tasks.filter((task) => !task.parentId);
+  const items = [
+    ...(board.entries || [])
+      .filter((entry) => dayOf(entry.at) === day)
+      .map((entry) => ({ kind: 'logged', id: entry.id, text: entry.text, at: entry.at })),
+    ...top
+      .filter((task) => dayOf(task.createdAt) === day)
+      .map((task) => ({ kind: 'added', id: task.id, text: task.title, at: task.createdAt })),
+    ...finished(board)
+      .filter((task) => dayOf(task.completedAt) === day)
+      .map((task) => ({ kind: 'done', id: task.id, text: task.title, at: task.completedAt, late: daysLate(task, dayOf) })),
+  ];
+  return items.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+export function activityDays(board, dayOf = localDay) {
+  const days = new Set((board.entries || []).map((entry) => dayOf(entry.at)));
+  for (const task of board.tasks) {
+    if (task.parentId) continue;
+    days.add(dayOf(task.createdAt));
+    if (task.done && task.completedAt) days.add(dayOf(task.completedAt));
+  }
+  return [...days].sort().reverse();
+}
+
+export function activityWeek(board, endDay, length = 7, dayOf = localDay) {
+  const done = finished(board);
+  const week = [];
+  for (let back = length - 1; back >= 0; back -= 1) {
+    const day = shiftDay(endDay, -back);
+    const that = done.filter((task) => dayOf(task.completedAt) === day);
+    const late = that.filter((task) => daysLate(task, dayOf) > 0).length;
+    week.push({
+      day,
+      onTime: that.length - late,
+      late,
+      logged: (board.entries || []).filter((entry) => dayOf(entry.at) === day).length,
+    });
+  }
+  return week;
 }

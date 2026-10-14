@@ -28,6 +28,7 @@
 | **Reorder** | Drag the grip on a task to move it among tasks with the same day and priority. |
 | **Delete** | Each task has its own delete button. Undo sits at the bottom for a few seconds. |
 | **Remind** | Turn on Remind me for a task with a day and pick a time. It starts at 9 AM, or the next hour if 9 AM has already passed today. With the Vercel setup below, the reminder arrives at that time even when Daymark is closed. Without it, the reminder only shows while Daymark is open. On iPhone, notifications only work after Daymark is added to the Home Screen. |
+| **Activity** | Switch to Activity to log things you did that aren't tasks, like "Gym 1 hour". Each day lists what you logged, the tasks you added, and the tasks you finished, marked on time or how many days late. A chart shows the last 7 days. |
 | **Install** | Add it to your home screen. It opens like an app, with its own icon. |
 
 ## Sync and reminders on Vercel
