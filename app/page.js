@@ -5,19 +5,25 @@ import {
   activityDays,
   activityWeek,
   addEntry,
+  addHabit,
   addList,
   addTask,
+  checkHabit,
   childrenOf,
   cleanTitle,
   DEFAULT_REMIND_AT,
   dayActivity,
   defaultRemindAt,
   deleteEntry,
+  deleteHabit,
   deleteList,
   deleteTask,
   doneTasks,
   dueChoice,
   groupOpenTasks,
+  habitChecked,
+  habitScheduled,
+  habitStats,
   mergeBoards,
   normalizeBoard,
   reminderKey,
@@ -26,13 +32,17 @@ import {
   reorderTasks,
   resolveDue,
   restoreEntries,
+  restoreHabit,
   restoreList,
   restoreTasks,
   sameBand,
   setDone,
   shiftDay,
   todayKey,
+  todayPlan,
+  updateHabit,
   updateTask,
+  weekdayOf,
 } from './lib/board';
 import {
   clearPass,
@@ -83,6 +93,8 @@ export default function HomePage() {
   const [title, setTitle] = useState('');
   const [view, setView] = useState('tasks');
   const [logText, setLogText] = useState('');
+  const [habitText, setHabitText] = useState('');
+  const [habitSheet, setHabitSheet] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [syncMode, setSyncMode] = useState('device');
   const [installEvent, setInstallEvent] = useState(null);
@@ -260,11 +272,13 @@ export default function HomePage() {
     checkReminders();
   }, [state]);
 
-  const sheetOpen = Boolean(sheet);
+  const sheetOpen = Boolean(sheet) || Boolean(habitSheet);
   useEffect(() => {
     if (!sheetOpen) return undefined;
     const onKey = (event) => {
-      if (event.key === 'Escape') setSheet(null);
+      if (event.key !== 'Escape') return;
+      setSheet(null);
+      setHabitSheet(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -367,6 +381,7 @@ export default function HomePage() {
     let next;
     if (undo.tasks) next = restoreTasks(state, undo.tasks);
     else if (undo.entries) next = restoreEntries(state, undo.entries);
+    else if (undo.habit) next = restoreHabit(state, undo.habit);
     else next = restoreList(state, undo.listRemoval);
     apply(next);
     setUndo(null);
@@ -378,6 +393,40 @@ export default function HomePage() {
     if (next === state) return;
     apply(next);
     setLogText('');
+  }
+
+  function onAddHabit(event) {
+    event.preventDefault();
+    const next = addHabit(state, habitText);
+    if (next === state) return;
+    apply(next);
+    setHabitText('');
+  }
+
+  function onToggleHabit(habitId, day, done) {
+    apply(checkHabit(state, habitId, day, done));
+  }
+
+  function openHabit(habit) {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setHabitSheet({ id: habit.id, name: habit.name, days: habit.days });
+  }
+
+  function saveHabit(event) {
+    event.preventDefault();
+    if (!habitSheet) return;
+    const next = updateHabit(state, habitSheet.id, { name: habitSheet.name, days: habitSheet.days });
+    if (next === state) return;
+    apply(next);
+    setHabitSheet(null);
+  }
+
+  function onDeleteHabit() {
+    const result = deleteHabit(state, habitSheet.id);
+    if (!result.removed) return;
+    apply(result.board);
+    setHabitSheet(null);
+    offerUndo({ label: result.removed.habit.name, habit: result.removed });
   }
 
   function onDeleteEntry(id) {
@@ -562,6 +611,7 @@ export default function HomePage() {
       <div className="views" role="tablist" aria-label="View">
         {[
           ['tasks', 'Tasks'],
+          ['habits', 'Habits'],
           ['activity', 'Activity'],
         ].map(([key, label]) => (
           <button
@@ -585,6 +635,17 @@ export default function HomePage() {
           onLogText={setLogText}
           onLog={onLog}
           onDeleteEntry={onDeleteEntry}
+        />
+      ) : view === 'habits' ? (
+        <HabitsView
+          board={state}
+          today={today}
+          habitText={habitText}
+          onHabitText={setHabitText}
+          onAddHabit={onAddHabit}
+          onToggleHabit={onToggleHabit}
+          onOpenHabit={openHabit}
+          onFinishTask={(id) => apply(setDone(state, id, true))}
         />
       ) : (
         <>
@@ -714,6 +775,19 @@ export default function HomePage() {
 
       {showIosHint ? <p className="hint">To install on iPhone, tap Share, then Add to Home Screen.</p> : null}
 
+      {habitSheet ? (
+        <HabitSheet
+          board={state}
+          draft={habitSheet}
+          today={today}
+          onChange={setHabitSheet}
+          onToggleDay={(day, done) => onToggleHabit(habitSheet.id, day, done)}
+          onSave={saveHabit}
+          onDelete={onDeleteHabit}
+          onClose={() => setHabitSheet(null)}
+        />
+      ) : null}
+
       {sheet ? (
         <TaskSheet
           sheet={sheet}
@@ -731,7 +805,239 @@ export default function HomePage() {
   );
 }
 
-const ENTRY_TAGS = { logged: 'Logged', added: 'Added', done: 'Done' };
+const ENTRY_TAGS = { logged: 'Logged', added: 'Added', done: 'Done', habit: 'Habit' };
+
+const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function HabitsView({ board, today, habitText, onHabitText, onAddHabit, onToggleHabit, onOpenHabit, onFinishTask }) {
+  const plan = todayPlan(board, today);
+  const week = Array.from({ length: 7 }, (_, index) => shiftDay(today, index - 6));
+  let heading = 'Today';
+  if (plan.scheduled > 0) heading += ` · ${plan.done} of ${plan.scheduled} done`;
+  return (
+    <>
+      <form className="add" onSubmit={onAddHabit}>
+        <input
+          value={habitText}
+          onChange={(event) => onHabitText(event.target.value)}
+          placeholder="Add a habit, like Drink water"
+          aria-label="Habit"
+          enterKeyHint="done"
+          maxLength={80}
+        />
+        <button type="submit">Add</button>
+      </form>
+
+      <section>
+        <h2>{heading}</h2>
+        {plan.habits.length === 0 ? (
+          <p className="hint tight">
+            Add the things you want to do each day. Check them off as you go, and each one keeps a streak.
+          </p>
+        ) : (
+          <ul className="tasks">
+            {plan.habits.map((habit) => (
+              <HabitRow
+                key={habit.id}
+                board={board}
+                habit={habit}
+                today={today}
+                week={week}
+                onToggle={onToggleHabit}
+                onOpen={onOpenHabit}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {plan.tasks.length > 0 ? (
+        <section>
+          <h2>Tasks still due</h2>
+          <ul className="tasks">
+            {plan.tasks.map((task) => (
+              <li key={task.id} className="row">
+                <button
+                  type="button"
+                  className="check"
+                  onClick={() => onFinishTask(task.id)}
+                  aria-label={`Finish ${task.title}`}
+                >
+                  <span className="box" aria-hidden="true" />
+                </button>
+                <div className="body stack">
+                  <span className="title">
+                    {PRIORITY_MARK[task.priority] ? (
+                      <span className={`pmark p-${task.priority}`} aria-hidden="true">
+                        {PRIORITY_MARK[task.priority]}
+                      </span>
+                    ) : null}
+                    {task.title}
+                  </span>
+                  <span className={task.dueAt < today ? 'meta late' : 'meta'}>
+                    {task.dueAt < today ? `Overdue since ${shortDate(task.dueAt)}` : 'Due today'}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function HabitRow({ board, habit, today, week, onToggle, onOpen }) {
+  const scheduled = habitScheduled(habit, today);
+  const done = habitChecked(board, habit.id, today);
+  const { current } = habitStats(board, habit, today);
+  let meta = current > 0 ? `${current}-day streak` : 'No streak yet';
+  if (!scheduled && !done) meta = 'Rest day';
+  return (
+    <li className="row">
+      <button
+        type="button"
+        className={done ? 'check checked' : 'check'}
+        aria-pressed={done}
+        aria-label={`${habit.name} today`}
+        onClick={() => onToggle(habit.id, today, !done)}
+      >
+        <span className="box round" aria-hidden="true" />
+      </button>
+      <button type="button" className="titlebtn body" onClick={() => onOpen(habit)}>
+        <span className="title">{habit.name}</span>
+        <span className={current > 0 && meta !== 'Rest day' ? 'meta streak' : 'meta'}>{meta}</span>
+      </button>
+      <div className="dots" aria-hidden="true">
+        {week.map((day) => (
+          <span key={day} className={`dot ${dayState(board, habit, day, today)}`} />
+        ))}
+      </div>
+    </li>
+  );
+}
+
+function dayState(board, habit, day, today) {
+  if (habitChecked(board, habit.id, day)) return 'done';
+  if (day > today) return 'future';
+  if (!habitScheduled(habit, day) || day < todayKey(new Date(habit.createdAt))) return 'rest';
+  return day === today ? 'open' : 'missed';
+}
+
+function HabitSheet({ board, draft, today, onChange, onToggleDay, onSave, onDelete, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  const habit = (board.habits || []).find((item) => item.id === draft.id);
+  if (!habit) return null;
+  const stats = habitStats(board, habit, today);
+  const start = shiftDay(today, -weekdayOf(today) - 28);
+  const cells = Array.from({ length: 35 }, (_, index) => shiftDay(start, index));
+  const blocked = !cleanTitle(draft.name) || draft.days.length === 0;
+  const toggleWeekday = (weekday) => {
+    const days = draft.days.includes(weekday)
+      ? draft.days.filter((day) => day !== weekday)
+      : [...draft.days, weekday].sort();
+    onChange({ ...draft, days });
+  };
+  return (
+    <div
+      className="backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <form
+        ref={ref}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="habit-title"
+        tabIndex={-1}
+        onSubmit={onSave}
+      >
+        <p id="habit-title" className="sheet-title">
+          Habit
+        </p>
+        <input
+          className="field"
+          value={draft.name}
+          onChange={(event) => onChange({ ...draft, name: event.target.value })}
+          aria-label="Habit name"
+          maxLength={80}
+        />
+        <p className="label">Which days?</p>
+        <div className="choices weekdays" role="group" aria-label="Days">
+          {WEEKDAY_LETTERS.map((letter, weekday) => (
+            <button
+              key={weekday}
+              type="button"
+              className={draft.days.includes(weekday) ? 'chip on' : 'chip'}
+              aria-pressed={draft.days.includes(weekday)}
+              aria-label={weekdayName(weekday)}
+              onClick={() => toggleWeekday(weekday)}
+            >
+              {letter}
+            </button>
+          ))}
+        </div>
+        <p className="stats">
+          <span>
+            <strong>{stats.current}</strong>day streak
+          </span>
+          <span>
+            <strong>{stats.best}</strong>best
+          </span>
+          <span>
+            <strong>{stats.rate === null ? '–' : `${Math.round(stats.rate * 100)}%`}</strong>last 30 days
+          </span>
+        </p>
+        <div className="cal" role="group" aria-label="Last five weeks">
+          {WEEKDAY_LETTERS.map((letter, index) => (
+            <span key={`head-${index}`} className="calhead" aria-hidden="true">
+              {letter}
+            </span>
+          ))}
+          {cells.map((day) => {
+            const done = habitChecked(board, habit.id, day);
+            return (
+              <button
+                key={day}
+                type="button"
+                className={`calday ${dayState(board, habit, day, today)}${day === today ? ' today' : ''}`}
+                disabled={day > today}
+                aria-pressed={done}
+                aria-label={dayHeading(day, today)}
+                onClick={() => onToggleDay(day, !done)}
+              >
+                {Number(day.slice(8))}
+              </button>
+            );
+          })}
+        </div>
+        <p className="note">Tap a day to mark it done or not done.</p>
+        <div className="sheet-actions spread">
+          <button type="button" className="textbtn danger" onClick={onDelete}>
+            Delete habit
+          </button>
+          <span className="sheet-actions">
+            <button type="button" className="textbtn" onClick={onClose}>
+              Close
+            </button>
+            <button type="submit" className="primary" disabled={blocked}>
+              Save
+            </button>
+          </span>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function weekdayName(weekday) {
+  return new Date(2026, 0, 4 + weekday).toLocaleDateString(undefined, { weekday: 'long' });
+}
 
 function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }) {
   const week = activityWeek(board, today);
@@ -739,9 +1045,11 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
   const finished = week.reduce((sum, day) => sum + day.onTime + day.late, 0);
   const onTime = week.reduce((sum, day) => sum + day.onTime, 0);
   const logged = week.reduce((sum, day) => sum + day.logged, 0);
+  const habits = week.reduce((sum, day) => sum + day.habits, 0);
   let summary = `${finished} ${finished === 1 ? 'task' : 'tasks'} finished`;
   if (finished > 0) summary += `, ${onTime} on time (${Math.round((onTime * 100) / finished)}%)`;
-  summary += `. ${logged} ${logged === 1 ? 'activity' : 'activities'} logged.`;
+  summary += `. ${habits} ${habits === 1 ? 'habit' : 'habits'} checked`;
+  summary += `, ${logged} ${logged === 1 ? 'activity' : 'activities'} logged.`;
   return (
     <>
       <form className="add" onSubmit={onLog}>
@@ -769,6 +1077,10 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
             Late
           </span>
           <span>
+            <i className="key habit" />
+            Habits
+          </span>
+          <span>
             <i className="key logged" />
             Logged
           </span>
@@ -794,7 +1106,7 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
                     </span>
                   ) : null}
                 </span>
-                <span className="logtime">{timeOf(item.at)}</span>
+                <span className="logtime">{todayKey(new Date(item.at)) === day ? timeOf(item.at) : ''}</span>
                 {item.kind === 'logged' ? (
                   <button
                     type="button"
@@ -815,10 +1127,13 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
 }
 
 function WeekChart({ week, today }) {
-  const top = Math.max(1, ...week.map((day) => Math.max(day.onTime + day.late, day.logged)));
+  const top = Math.max(1, ...week.map((day) => Math.max(day.onTime + day.late, day.habits, day.logged)));
   const height = (count) => `${(count / top) * 100}%`;
   const label = week
-    .map((day) => `${weekday(day.day)}: ${day.onTime} on time, ${day.late} late, ${day.logged} logged`)
+    .map(
+      (day) =>
+        `${weekday(day.day)}: ${day.onTime} on time, ${day.late} late, ${day.habits} habits, ${day.logged} logged`,
+    )
     .join('; ');
   return (
     <div className="chart" role="img" aria-label={label}>
@@ -829,6 +1144,7 @@ function WeekChart({ week, today }) {
               <span className="seg late" style={{ flexGrow: day.late }} />
               <span className="seg ontime" style={{ flexGrow: day.onTime }} />
             </div>
+            <div className="bar habit" style={{ height: height(day.habits) }} />
             <div className="bar logged" style={{ height: height(day.logged) }} />
           </div>
           <span className="daylabel">{weekday(day.day)}</span>
@@ -1133,6 +1449,8 @@ function signature(board) {
     lists: board.lists,
     tasks: board.tasks,
     entries: board.entries,
+    habits: board.habits,
+    checks: board.checks,
     tombstones: board.tombstones,
   });
 }

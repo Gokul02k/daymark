@@ -4,6 +4,13 @@ import {
   activityDays,
   activityWeek,
   addEntry,
+  addHabit,
+  checkHabit,
+  deleteHabit,
+  habitChecked,
+  habitStats,
+  restoreHabit,
+  todayPlan,
   addList,
   addTask,
   dayActivity,
@@ -200,8 +207,8 @@ test('a day shows what was logged, added, and finished, and whether it was on ti
   const week = activityWeek(board, '2026-10-13', 7, utcDay);
   assert.equal(week.length, 7);
   assert.equal(week[0].day, '2026-10-07');
-  assert.deepEqual(week[5], { day: '2026-10-12', onTime: 1, late: 1, logged: 1 });
-  assert.deepEqual(week[6], { day: '2026-10-13', onTime: 0, late: 0, logged: 0 });
+  assert.deepEqual(week[5], { day: '2026-10-12', onTime: 1, late: 1, habits: 0, logged: 1 });
+  assert.deepEqual(week[6], { day: '2026-10-13', onTime: 0, late: 0, habits: 0, logged: 0 });
 });
 
 test('a logged activity syncs, can be deleted, and comes back with undo', () => {
@@ -213,6 +220,70 @@ test('a logged activity syncs, can be deleted, and comes back with undo', () => 
   const restored = restoreEntries(laptop, removed);
   assert.deepEqual(restored.entries.map((entry) => entry.text), ['Read 20 pages']);
   assert.equal(addEntry(start, '   '), start);
+});
+
+function habitBoard(name, days, createdAt) {
+  const board = addHabit(emptyBoard(), name, days);
+  const habit = { ...board.habits[0], createdAt };
+  return { board: { ...board, habits: [habit] }, habit };
+}
+
+test('a habit is checked once a day, and the check shows in that day', () => {
+  let { board, habit } = habitBoard('Drink water', undefined, '2026-10-01T00:00:00Z');
+  board = checkHabit(board, habit.id, '2026-10-14', true, '2026-10-14T03:00:00Z');
+  board = checkHabit(board, habit.id, '2026-10-14', true);
+  assert.equal(board.checks.length, 1);
+  assert.equal(habitChecked(board, habit.id, '2026-10-14'), true);
+  assert.deepEqual(
+    dayActivity(board, '2026-10-14', utcDay).map((item) => [item.kind, item.text]),
+    [['habit', 'Drink water']],
+  );
+  assert.equal(activityWeek(board, '2026-10-14', 7, utcDay)[6].habits, 1);
+  board = checkHabit(board, habit.id, '2026-10-14', false);
+  assert.equal(habitChecked(board, habit.id, '2026-10-14'), false);
+});
+
+test('streaks skip rest days, and today only breaks one once it is over', () => {
+  const weekdays = [1, 2, 3, 4, 5];
+  let { board, habit } = habitBoard('Run', weekdays, '2026-10-01T00:00:00Z');
+  for (const day of ['2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-12', '2026-10-13']) {
+    board = checkHabit(board, habit.id, day, true, `${day}T06:00:00Z`);
+  }
+  const stats = habitStats(board, habit, '2026-10-14');
+  assert.equal(stats.current, 6);
+  assert.equal(stats.best, 6);
+  board = checkHabit(board, habit.id, '2026-10-14', true, '2026-10-14T06:00:00Z');
+  assert.equal(habitStats(board, habit, '2026-10-14').current, 7);
+  board = checkHabit(board, habit.id, '2026-10-08', false);
+  assert.equal(habitStats(board, habit, '2026-10-14').current, 4);
+  assert.equal(habitStats(board, habit, '2026-10-14').best, 4);
+});
+
+test('today lists habits, how many are done, and tasks still due', () => {
+  let { board, habit } = habitBoard('Read', undefined, '2026-10-01T00:00:00Z');
+  board = addHabit(board, 'Stretch', [0]);
+  board = addTask(board, { title: 'Pay rent', dueAt: '2026-10-12' });
+  board = addTask(board, { title: 'Later', dueAt: '2026-10-20' });
+  board = checkHabit(board, habit.id, '2026-10-14', true);
+  const plan = todayPlan(board, '2026-10-14');
+  assert.deepEqual(plan.habits.map((item) => item.name), ['Read', 'Stretch']);
+  assert.equal(plan.scheduled, 1);
+  assert.equal(plan.done, 1);
+  assert.deepEqual(plan.tasks.map((task) => task.title), ['Pay rent']);
+});
+
+test('deleting a habit takes its history, undo brings both back, and devices agree', () => {
+  let { board, habit } = habitBoard('Meditate', undefined, '2026-10-01T00:00:00Z');
+  board = checkHabit(board, habit.id, '2026-10-13', true);
+  const phone = checkHabit(board, habit.id, '2026-10-14', true);
+  const { board: laptop, removed } = deleteHabit(board, habit.id);
+  assert.equal(laptop.checks.length, 0);
+  const merged = mergeBoards(phone, laptop);
+  assert.equal(merged.habits.length, 0);
+  assert.equal(merged.checks.filter((check) => check.day === '2026-10-13').length, 0);
+  const back = restoreHabit(laptop, removed);
+  assert.equal(back.habits.length, 1);
+  assert.equal(back.checks.length, 1);
 });
 
 test('two devices keep a new task and a deletion', () => {

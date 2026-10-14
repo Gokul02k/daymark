@@ -54,9 +54,24 @@ export function emptyBoard() {
     lists: [{ id: 'inbox', name: 'Inbox', createdAt: new Date().toISOString(), updatedAt: new Date(0).toISOString() }],
     tasks: [],
     entries: [],
+    habits: [],
+    checks: [],
     tombstones: [],
     updatedAt: new Date(0).toISOString(),
   };
+}
+
+export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+
+function cleanDays(value) {
+  const days = Array.isArray(value)
+    ? [...new Set(value.map(Number))].filter((day) => Number.isInteger(day) && day >= 0 && day <= 6).sort()
+    : [];
+  return days.length > 0 ? days : ALL_DAYS.slice();
+}
+
+function checkId(habitId, day) {
+  return `${habitId}:${day}`;
 }
 
 export function normalizeBoard(raw) {
@@ -104,6 +119,28 @@ export function normalizeBoard(raw) {
       updatedAt: entry.updatedAt || entry.createdAt || entry.at,
     }));
 
+  const habits = (Array.isArray(base.habits) ? base.habits : [])
+    .filter((habit) => habit && habit.id && cleanTitle(habit.name, 80))
+    .map((habit, index) => ({
+      id: String(habit.id),
+      name: cleanTitle(habit.name, 80),
+      days: cleanDays(habit.days),
+      position: Number.isFinite(habit.position) ? habit.position : index,
+      createdAt: habit.createdAt || new Date().toISOString(),
+      updatedAt: habit.updatedAt || habit.createdAt || new Date(0).toISOString(),
+    }));
+
+  const checks = (Array.isArray(base.checks) ? base.checks : [])
+    .filter((check) => check && check.habitId && cleanDue(check.day) && !Number.isNaN(Date.parse(check.at)))
+    .map((check) => ({
+      id: checkId(String(check.habitId), cleanDue(check.day)),
+      habitId: String(check.habitId),
+      day: cleanDue(check.day),
+      at: new Date(check.at).toISOString(),
+      createdAt: check.createdAt || check.at,
+      updatedAt: check.updatedAt || check.createdAt || check.at,
+    }));
+
   const tombstones = (Array.isArray(base.tombstones) ? base.tombstones : [])
     .filter((item) => item && item.id && item.deletedAt)
     .map((item) => ({ id: String(item.id), deletedAt: String(item.deletedAt) }));
@@ -112,6 +149,8 @@ export function normalizeBoard(raw) {
     lists: cleanLists,
     tasks,
     entries,
+    habits,
+    checks,
     tombstones,
     updatedAt: base.updatedAt || new Date(0).toISOString(),
   };
@@ -402,11 +441,15 @@ export function mergeBoards(left, right) {
   const lists = mergeById(a.lists, b.lists, tombstones);
   const tasks = mergeById(a.tasks, b.tasks, tombstones);
   const entries = mergeById(a.entries, b.entries, tombstones);
-  const live = new Set([...lists, ...tasks, ...entries].map((record) => record.id));
+  const habits = mergeById(a.habits, b.habits, tombstones);
+  const checks = mergeById(a.checks, b.checks, tombstones);
+  const live = new Set([...lists, ...tasks, ...entries, ...habits, ...checks].map((record) => record.id));
   return {
     lists,
     tasks,
     entries,
+    habits,
+    checks,
     tombstones: tombstones.filter((tomb) => !live.has(tomb.id)),
     updatedAt: a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt,
   };
@@ -570,10 +613,26 @@ function finished(board) {
   return board.tasks.filter((task) => !task.parentId && task.done && task.completedAt);
 }
 
+function habitNames(board) {
+  return new Map((board.habits || []).map((habit) => [habit.id, habit.name]));
+}
+
+function checksOn(board, day) {
+  const names = habitNames(board);
+  return (board.checks || []).filter((check) => check.day === day && names.has(check.habitId));
+}
+
 /** Everything that happened on one day, oldest first. */
 export function dayActivity(board, day, dayOf = localDay) {
   const top = board.tasks.filter((task) => !task.parentId);
+  const names = habitNames(board);
   const items = [
+    ...checksOn(board, day).map((check) => ({
+      kind: 'habit',
+      id: check.id,
+      text: names.get(check.habitId),
+      at: check.at,
+    })),
     ...(board.entries || [])
       .filter((entry) => dayOf(entry.at) === day)
       .map((entry) => ({ kind: 'logged', id: entry.id, text: entry.text, at: entry.at })),
@@ -589,6 +648,8 @@ export function dayActivity(board, day, dayOf = localDay) {
 
 export function activityDays(board, dayOf = localDay) {
   const days = new Set((board.entries || []).map((entry) => dayOf(entry.at)));
+  const names = habitNames(board);
+  for (const check of board.checks || []) if (names.has(check.habitId)) days.add(check.day);
   for (const task of board.tasks) {
     if (task.parentId) continue;
     days.add(dayOf(task.createdAt));
@@ -608,8 +669,152 @@ export function activityWeek(board, endDay, length = 7, dayOf = localDay) {
       day,
       onTime: that.length - late,
       late,
+      habits: checksOn(board, day).length,
       logged: (board.entries || []).filter((entry) => dayOf(entry.at) === day).length,
     });
   }
   return week;
+}
+
+export function weekdayOf(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, month - 1, day).getDay();
+}
+
+export function addHabit(board, name, days = ALL_DAYS) {
+  const title = cleanTitle(name, 80);
+  if (!title) return board;
+  const habits = board.habits || [];
+  const createdAt = stamp();
+  const position = habits.reduce((max, habit) => Math.max(max, habit.position), -1) + 1;
+  const habit = { id: crypto.randomUUID(), name: title, days: cleanDays(days), position, createdAt, updatedAt: createdAt };
+  return touch({ ...board, habits: [...habits, habit] });
+}
+
+export function updateHabit(board, id, patch) {
+  const name = patch.name === undefined ? undefined : cleanTitle(patch.name, 80);
+  if (patch.name !== undefined && !name) return board;
+  return touch({
+    ...board,
+    habits: (board.habits || []).map((habit) =>
+      habit.id !== id
+        ? habit
+        : {
+            ...habit,
+            name: name === undefined ? habit.name : name,
+            days: patch.days === undefined ? habit.days : cleanDays(patch.days),
+            updatedAt: stamp(),
+          },
+    ),
+  });
+}
+
+export function deleteHabit(board, id) {
+  const habit = (board.habits || []).find((item) => item.id === id);
+  if (!habit) return { board, removed: null };
+  const checks = (board.checks || []).filter((check) => check.habitId === id);
+  return {
+    board: touch({
+      ...board,
+      habits: board.habits.filter((item) => item.id !== id),
+      checks: (board.checks || []).filter((check) => check.habitId !== id),
+      tombstones: bury(board.tombstones, [id, ...checks.map((check) => check.id)]),
+    }),
+    removed: { habit, checks },
+  };
+}
+
+export function restoreHabit(board, removed) {
+  if (!removed?.habit) return board;
+  const revived = stamp();
+  const back = new Set([removed.habit.id, ...removed.checks.map((check) => check.id)]);
+  const habits = (board.habits || []).some((habit) => habit.id === removed.habit.id)
+    ? board.habits
+    : [...(board.habits || []), { ...removed.habit, updatedAt: revived }];
+  const have = new Set((board.checks || []).map((check) => check.id));
+  return touch({
+    ...board,
+    habits,
+    checks: [
+      ...(board.checks || []),
+      ...removed.checks.filter((check) => !have.has(check.id)).map((check) => ({ ...check, updatedAt: revived })),
+    ],
+    tombstones: (board.tombstones || []).filter((item) => !back.has(item.id)),
+  });
+}
+
+export function habitChecked(board, habitId, day) {
+  return (board.checks || []).some((check) => check.id === checkId(habitId, day));
+}
+
+export function checkHabit(board, habitId, day, done, at = new Date()) {
+  const id = checkId(habitId, day);
+  const checks = board.checks || [];
+  const has = checks.some((check) => check.id === id);
+  if (done === has) return board;
+  if (!done) return touch({ ...board, checks: checks.filter((check) => check.id !== id), tombstones: bury(board.tombstones, [id]) });
+  const when = stamp();
+  return touch({
+    ...board,
+    checks: [...checks, { id, habitId, day, at: new Date(at).toISOString(), createdAt: when, updatedAt: when }],
+    tombstones: (board.tombstones || []).filter((item) => item.id !== id),
+  });
+}
+
+export function habitScheduled(habit, day) {
+  return habit.days.includes(weekdayOf(day));
+}
+
+/**
+ * Streaks count scheduled days in a row; rest days neither add nor break them, and today
+ * only breaks a streak once it is over.
+ */
+export function habitStats(board, habit, today = todayKey()) {
+  const done = new Set((board.checks || []).filter((check) => check.habitId === habit.id).map((check) => check.day));
+  let start = todayKey(new Date(habit.createdAt));
+  for (const day of done) if (day < start) start = day;
+  if (dayDiff(start, today) > 730) start = shiftDay(today, -730);
+
+  let current = 0;
+  let day = today;
+  if (habitScheduled(habit, day) && !done.has(day)) day = shiftDay(day, -1);
+  for (; day >= start; day = shiftDay(day, -1)) {
+    if (!habitScheduled(habit, day)) continue;
+    if (!done.has(day)) break;
+    current += 1;
+  }
+
+  let best = 0;
+  let run = 0;
+  for (let d = start; d <= today; d = shiftDay(d, 1)) {
+    if (!habitScheduled(habit, d)) continue;
+    if (done.has(d)) {
+      run += 1;
+      best = Math.max(best, run);
+    } else if (d < today) {
+      run = 0;
+    }
+  }
+
+  let due = 0;
+  let hit = 0;
+  for (let back = 0; back < 30; back += 1) {
+    const d = shiftDay(today, -back);
+    if (d < start) break;
+    if (!habitScheduled(habit, d) || (d === today && !done.has(d))) continue;
+    due += 1;
+    if (done.has(d)) hit += 1;
+  }
+  return { current, best, rate: due > 0 ? hit / due : null };
+}
+
+/** Habits in order, how many of today's are done, and tasks due today or earlier that are still open. */
+export function todayPlan(board, today = todayKey()) {
+  const habits = (board.habits || []).slice().sort((a, b) => a.position - b.position);
+  const scheduled = habits.filter((habit) => habitScheduled(habit, today));
+  const done = scheduled.filter((habit) => habitChecked(board, habit.id, today)).length;
+  const tasks = board.tasks
+    .filter((task) => !task.parentId && !task.done && task.dueAt && task.dueAt <= today)
+    .sort(compareOpen);
+  return { habits, scheduled: scheduled.length, done, tasks };
 }

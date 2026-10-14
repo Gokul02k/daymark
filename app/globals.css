@@ -256,6 +256,45 @@ h2 {
 .seg.ontime, .key.ontime { background: var(--ok); }
 .seg.late, .key.late { background: #e8c170; }
 .bar.logged, .key.logged { background: #86b3ef; }
+.bar.habit, .key.habit { background: #c3a6f2; }
+.tag.habit { background: rgba(195, 166, 242, 0.16); color: #c3a6f2; }
+
+.box.round { border-radius: 50%; }
+.stack { display: flex; flex-direction: column; gap: 0.15rem; }
+.meta.streak { color: var(--ok); }
+
+.dots { flex: none; display: flex; align-items: center; gap: 4px; padding-right: 0.9rem; }
+.dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--line); }
+.dot.done { background: var(--ok); border-color: var(--ok); }
+.dot.missed { border-color: rgba(240, 144, 125, 0.65); }
+.dot.open { border-color: var(--muted); }
+.dot.rest { opacity: 0.45; border-style: dashed; }
+
+.weekdays .chip { min-width: 2.5rem; padding: 0.35rem 0; text-align: center; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0.25rem 0 0; color: var(--muted); }
+.stats strong { margin-right: 0.3rem; color: var(--text); font-size: 1.1rem; }
+
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; }
+.calhead { text-align: center; color: var(--muted); font-size: 0.75rem; }
+.calday {
+  aspect-ratio: 1;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.calday.done { background: var(--ok); border-color: var(--ok); color: var(--ink); font-weight: 650; }
+.calday.missed { border-color: rgba(240, 144, 125, 0.6); color: var(--text); }
+.calday.open { border-color: var(--text); color: var(--text); }
+.calday.rest { opacity: 0.5; border-style: dashed; }
+.calday.future { opacity: 0.25; }
+.calday.today { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--muted); }
+
+.sheet-actions.spread { justify-content: space-between; }
+.danger { color: #f0907d; }
 
 .daylabel { font-size: 0.75rem; color: var(--muted); }
 .col.today .daylabel { color: var(--text); font-weight: 650; }
