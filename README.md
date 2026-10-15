@@ -18,12 +18,12 @@
 
 | | |
 |---|---|
-| **Add** | Tap the + button. Choose Task or Habit. A task then asks when it is due (No date limit, Today, Tomorrow, or a day you pick), whether to remind you, and its priority. A habit asks for its name. |
+| **Add** | Tap the + button. Choose Task, Habit, or List. A task then asks when it is due (No date limit, Today, Tomorrow, or a day you pick), whether to remind you, and its priority. A habit asks for its name. List adds a list, or deletes one you no longer need. |
 | **Check** | Tap the box to finish a task. Tap it again to bring it back. Checking a task finishes its steps. |
 | **Edit** | Tap Edit on a task, or its title, to change its name, when it is due, the reminder and its time, or its priority. A step only has a name to change. |
 | **Due** | Open tasks split into Overdue, Today, Later, and No date limit. Overdue and later tasks show their day under the title. |
 | **Priority** | Mark a task High, Medium, or Low. It shows !!!, !!, or ! before the title, and higher priority tasks sit at the top of their section. |
-| **Lists** | Inbox is the start. Add Work, Personal, or anything else, and switch with the chips. |
+| **Lists** | Inbox is the start. Tap + and choose List to add Work, Personal, or anything else. Once you have more than one list, chips under the habits switch between them, and Edit at the end opens the lists again so you can delete one. Deleting a list deletes its tasks too, and Undo brings them back for a few seconds. |
 | **Steps** | Add a step under a task when it is more than one action. |
 | **Reorder** | Drag the grip on a task to move it among tasks with the same day and priority. |
 | **Delete** | Each task has its own delete button. Undo sits at the bottom for a few seconds. |

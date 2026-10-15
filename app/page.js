@@ -102,7 +102,6 @@ export default function HomePage() {
   const [undo, setUndo] = useState(null);
   const [stepFor, setStepFor] = useState(null);
   const [stepTitle, setStepTitle] = useState('');
-  const [naming, setNaming] = useState(false);
   const [listName, setListName] = useState('');
   const [dragOrder, setDragOrder] = useState(null);
   const [remindHint, setRemindHint] = useState('');
@@ -292,13 +291,15 @@ export default function HomePage() {
     checkReminders();
   }, [state]);
 
-  const sheetOpen = Boolean(sheet) || Boolean(habitSheet);
+  const sheetOpen = Boolean(sheet) || Boolean(habitSheet) || Boolean(composer) || notifyOpen;
   useEffect(() => {
     if (!sheetOpen) return undefined;
     const onKey = (event) => {
       if (event.key !== 'Escape') return;
       setSheet(null);
       setHabitSheet(null);
+      setComposer(null);
+      setNotifyOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -372,21 +373,28 @@ export default function HomePage() {
 
   function onCreateList(event) {
     event.preventDefault();
-    const next = addList(state, listName);
-    if (next === state) return;
-    const created = next.lists.find((list) => list.name.toLowerCase() === listName.trim().toLowerCase());
-    apply(next);
+    const name = cleanTitle(listName, 40);
+    if (!name) return;
+    const next = addList(state, name);
+    const created = next.lists.find((list) => list.name.toLowerCase() === name.toLowerCase());
+    if (next !== state) apply(next);
     if (created) chooseList(created.id);
     setListName('');
-    setNaming(false);
+    setComposer(null);
   }
 
-  function onDeleteList() {
-    const result = deleteList(state, listId);
+  function onDeleteList(id) {
+    const result = deleteList(state, id);
     if (!result.removed) return;
     apply(result.board);
-    chooseList('inbox');
+    if (id === listId) chooseList('inbox');
+    setComposer(null);
     offerUndo({ label: result.removed.list.name, listRemoval: result.removed });
+  }
+
+  function openLists() {
+    setListName('');
+    setComposer('list');
   }
 
   function onDeleteTask(id) {
@@ -738,41 +746,6 @@ export default function HomePage() {
         />
       ) : (
         <>
-      <div className="lists">
-        {state.lists.map((list) => (
-          <button
-            key={list.id}
-            type="button"
-            className={list.id === listId ? 'chip on' : 'chip'}
-            onClick={() => chooseList(list.id)}
-          >
-            {list.name}
-          </button>
-        ))}
-        {naming ? (
-          <form className="chipform" onSubmit={onCreateList}>
-            <input
-              value={listName}
-              onChange={(event) => setListName(event.target.value)}
-              placeholder="List name"
-              aria-label="List name"
-              maxLength={40}
-              autoFocus
-            />
-            <button type="submit">Add</button>
-          </form>
-        ) : (
-          <button type="button" className="chip" onClick={() => setNaming(true)}>
-            New list
-          </button>
-        )}
-      </div>
-      {listId !== 'inbox' ? (
-        <button type="button" className="textbtn" onClick={onDeleteList}>
-          Delete this list
-        </button>
-      ) : null}
-
       {planToday.habits.length > 0 ? (
         <section>
           <div className="hhead">
@@ -806,8 +779,30 @@ export default function HomePage() {
         </section>
       ) : null}
 
+      {state.lists.length > 1 ? (
+        <div className="lists" role="group" aria-label="Lists">
+          {state.lists.map((list) => (
+            <button
+              key={list.id}
+              type="button"
+              className={list.id === listId ? 'chip on' : 'chip'}
+              aria-pressed={list.id === listId}
+              onClick={() => chooseList(list.id)}
+            >
+              {list.name}
+            </button>
+          ))}
+          <button type="button" className="chip ghost" onClick={openLists}>
+            Edit
+          </button>
+        </div>
+      ) : null}
+
       {listEmpty && planToday.habits.length === 0 ? (
-        <p className="hint empty">Tap + to add a task or a habit.</p>
+        <p className="hint empty">Tap + to add a task, a habit, or a list.</p>
+      ) : null}
+      {listEmpty && planToday.habits.length > 0 && listId !== 'inbox' ? (
+        <p className="hint empty">Nothing in {currentList?.name} yet. Tap + to add a task.</p>
       ) : null}
 
       {attention.length > 0 ? (
@@ -945,7 +940,16 @@ export default function HomePage() {
 
       {showIosHint ? <p className="hint">To install on iPhone, tap Share, then Add to Home Screen.</p> : null}
 
-      {composer ? (
+      {composer === 'list' ? (
+        <ListsSheet
+          board={state}
+          listName={listName}
+          onListName={setListName}
+          onCreate={onCreateList}
+          onDelete={onDeleteList}
+          onClose={() => setComposer(null)}
+        />
+      ) : composer ? (
         <AddChooser
           mode={composer}
           habitText={habitText}
@@ -955,6 +959,7 @@ export default function HomePage() {
             setHabitText('');
             setComposer('habit');
           }}
+          onList={openLists}
           onSubmitHabit={onAddHabit}
           onClose={() => setComposer(null)}
         />
@@ -1308,7 +1313,74 @@ function HabitSheet({ board, draft, today, onChange, onToggleDay, onSave, onDele
   );
 }
 
-function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onSubmitHabit, onClose }) {
+function ListsSheet({ board, listName, onListName, onCreate, onDelete, onClose }) {
+  const [asking, setAsking] = useState(null);
+  const counts = new Map();
+  for (const task of board.tasks) {
+    if (!task.parentId) counts.set(task.listId, (counts.get(task.listId) || 0) + 1);
+  }
+  return (
+    <div
+      className="backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <form className="sheet" role="dialog" aria-modal="true" aria-label="Lists" onSubmit={onCreate}>
+        <p className="sheet-title">Lists</p>
+        <div className="listadd">
+          <input
+            className="field"
+            value={listName}
+            onChange={(event) => onListName(event.target.value)}
+            placeholder="New list, like Work"
+            aria-label="New list"
+            maxLength={40}
+            autoFocus
+          />
+          <button type="submit" className="primary" disabled={!cleanTitle(listName, 40)}>
+            Add
+          </button>
+        </div>
+        <ul className="listrows">
+          {board.lists.map((list) => {
+            const count = counts.get(list.id) || 0;
+            let confirmText = 'Delete';
+            if (count === 1) confirmText = 'Delete with its task';
+            if (count > 1) confirmText = `Delete with its ${count} tasks`;
+            return (
+              <li key={list.id} className="listrow">
+                <span className="listrow-name">{list.name}</span>
+                <span className="listrow-count">{count === 1 ? '1 task' : `${count} tasks`}</span>
+                {list.id === 'inbox' ? null : asking === list.id ? (
+                  <button type="button" className="textbtn danger" onClick={() => onDelete(list.id)}>
+                    {confirmText}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="textbtn"
+                    aria-label={`Delete ${list.name}`}
+                    onClick={() => (count > 0 ? setAsking(list.id) : onDelete(list.id))}
+                  >
+                    Delete
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="sheet-actions">
+          <button type="button" className="textbtn" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onList, onSubmitHabit, onClose }) {
   return (
     <div
       className="backdrop"
@@ -1335,6 +1407,9 @@ function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onSubmitHab
             </button>
             <button type="button" className="chip" onClick={onHabit}>
               Habit
+            </button>
+            <button type="button" className="chip" onClick={onList}>
+              List
             </button>
           </div>
         )}
