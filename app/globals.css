@@ -146,17 +146,30 @@ main {
   max-width: 40rem;
   margin: 0 auto;
   padding:
-    max(1.1rem, env(safe-area-inset-top))
+    max(0.5rem, env(safe-area-inset-top))
     max(1rem, env(safe-area-inset-right))
     calc(var(--dock) + 1.35rem)
     max(1rem, env(safe-area-inset-left));
 }
 
 .top {
+  position: sticky;
+  top: 0;
+  z-index: 34;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  margin: 0 -1rem;
+  padding: 0.6rem 1rem;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.top.is-stuck {
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(1.3) blur(14px);
+  -webkit-backdrop-filter: saturate(1.3) blur(14px);
+  box-shadow: 0 1px 0 var(--line), 0 10px 22px rgba(0, 0, 0, 0.08);
 }
 
 .brand { display: flex; align-items: center; gap: 0.75rem; }
@@ -1168,6 +1181,9 @@ h2 {
 .namefields .field { width: 100%; min-height: 44px; font-size: 0.95rem; font-weight: 500; color: var(--text); }
 
 .chip svg { width: 1rem; height: 1rem; margin-right: 0.35rem; vertical-align: -0.15em; }
+
+.soundrow { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.soundrow > span { color: var(--muted); font-size: 0.85rem; font-weight: 650; }
 
 .chip, .chipform input {
   border: 1px solid var(--line);

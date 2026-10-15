@@ -5,6 +5,7 @@ const LIST_KEY = 'daymark-list';
 const PASS_KEY = 'daymark-pass';
 const OLD_PASSCODE_KEY = 'daymark-passcode';
 const THEME_KEY = 'daymark-theme';
+const SOUND_KEY = 'daymark-sound';
 const THEME_COLOR = { light: '#f3efe6', dark: '#12110f' };
 
 export function loadPersisted() {
@@ -38,6 +39,21 @@ export function loadSelectedList() {
 export function saveSelectedList(id) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(LIST_KEY, id);
+}
+
+export function loadSound() {
+  if (typeof window === 'undefined') return true;
+  try {
+    return localStorage.getItem(SOUND_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveSound(on) {
+  try {
+    localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
+  } catch {}
 }
 
 export function loadTheme() {

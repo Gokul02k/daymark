@@ -51,14 +51,17 @@ import {
   clearPass,
   applyTheme,
   loadPass,
+  loadSound,
   loadTheme,
   loadSelectedList,
   loadState,
   savePass,
   savePersisted,
   saveSelectedList,
+  saveSound,
 } from './lib/storage';
 import Buddy, { BuddyPreview, KIND_LABELS, STYLE_LABELS, defaultBuddyName } from './companion';
+import { playBuddySound } from './sounds';
 
 const GROUPS = [
   ['overdue', 'Overdue'],
@@ -110,6 +113,8 @@ export default function HomePage() {
   const [passInput, setPassInput] = useState('');
   const [passHint, setPassHint] = useState('');
   const [theme, setTheme] = useState('light');
+  const [soundOn, setSoundOn] = useState(true);
+  const [stuck, setStuck] = useState(false);
   const stateRef = useRef(null);
   const undoTimer = useRef(null);
   const pushTimer = useRef(null);
@@ -221,12 +226,19 @@ export default function HomePage() {
   useEffect(() => {
     const saved = document.documentElement.dataset.theme === 'dark' ? 'dark' : loadTheme();
     setTheme(applyTheme(saved));
+    setSoundOn(loadSound());
     const onStorage = (event) => {
-      if (event.key !== 'daymark-theme') return;
-      setTheme(applyTheme(event.newValue));
+      if (event.key === 'daymark-theme') setTheme(applyTheme(event.newValue));
+      if (event.key === 'daymark-sound') setSoundOn(event.newValue !== 'off');
     };
+    const onScroll = () => setStuck(window.scrollY > 8);
+    onScroll();
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('scroll', onScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -482,7 +494,16 @@ export default function HomePage() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const { kind, style, name, user } = state.companion;
     setRemindHint('');
-    setSettings({ kind, style, name, user, theme, startTheme: theme, times: (state.notifyTimes || []).slice() });
+    setSettings({
+      kind,
+      style,
+      name,
+      user,
+      sound: soundOn,
+      theme,
+      startTheme: theme,
+      times: (state.notifyTimes || []).slice(),
+    });
   }
 
   function previewTheme(next) {
@@ -522,6 +543,10 @@ export default function HomePage() {
       next = { ...next, notifyTimes: times, notifyTimesAt: at, notifySent: [...sent].sort() };
     }
     if (next !== state) apply({ ...next, updatedAt: at });
+    if (settings.sound !== soundOn) {
+      saveSound(settings.sound);
+      setSoundOn(settings.sound);
+    }
     setSettings(null);
     if (companionChanged && companion.user && companion.user !== old.user) cue('meet');
     else if (companionChanged) cue('newlook');
@@ -716,9 +741,9 @@ export default function HomePage() {
 
   return (
     <main className={[view === 'activity' ? '' : 'home', undo ? 'has-undo' : ''].filter(Boolean).join(' ') || undefined}>
-      <header className="top">
+      <header className={stuck ? 'top is-stuck' : 'top'}>
         <div className="brand">
-          <Buddy mood={moodFor(state, today)} cue={buddyCue} companion={state.companion} />
+          <Buddy mood={moodFor(state, today)} cue={buddyCue} companion={state.companion} sound={soundOn} />
           <div>
             <h1>
               Daymark
@@ -1524,7 +1549,10 @@ function SettingsSheet({ draft, hint, pushState, onChange, onTheme, onSave, onCa
                 type="button"
                 className={draft.kind === kind ? 'kind on' : 'kind'}
                 aria-pressed={draft.kind === kind}
-                onClick={() => set({ kind })}
+                onClick={() => {
+                  set({ kind });
+                  if (draft.sound) playBuddySound(kind, 'poke');
+                }}
               >
                 <BuddyPreview kind={kind} style={draft.style} small />
                 {label}
@@ -1566,6 +1594,32 @@ function SettingsSheet({ draft, hint, pushState, onChange, onTheme, onSave, onCa
                 maxLength={24}
               />
             </label>
+          </div>
+          <div className="soundrow">
+            <span>Cute sounds</span>
+            <div className="choices" role="group" aria-label="Cute sounds">
+              <button
+                type="button"
+                className={draft.sound ? 'chip on' : 'chip'}
+                aria-pressed={draft.sound}
+                onClick={() => {
+                  set({ sound: true });
+                  playBuddySound(draft.kind, 'giggle');
+                }}
+              >
+                <SpeakerIcon on />
+                On
+              </button>
+              <button
+                type="button"
+                className={draft.sound ? 'chip' : 'chip on'}
+                aria-pressed={!draft.sound}
+                onClick={() => set({ sound: false })}
+              >
+                <SpeakerIcon />
+                Off
+              </button>
+            </div>
           </div>
         </section>
 
@@ -1652,6 +1706,15 @@ function GearIcon() {
         d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.7 7.7 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.7 7.7 0 0 0 2.6-1.5l2.4 1 2-3.4z"
         {...ICON_PEN}
       />
+    </svg>
+  );
+}
+
+function SpeakerIcon({ on = false }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" {...ICON_PEN} />
+      {on ? <path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" {...ICON_PEN} /> : <path d="M16 9.5l5 5M21 9.5l-5 5" {...ICON_PEN} />}
     </svg>
   );
 }

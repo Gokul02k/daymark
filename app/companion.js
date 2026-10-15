@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { playBuddySound } from './sounds';
 
 export const KIND_LABELS = { robot: 'Robot', cat: 'Cat', puppy: 'Puppy', bunny: 'Bunny', panda: 'Panda' };
 export const STYLE_LABELS = { plain: 'Plain', girl: 'Girl', boy: 'Boy' };
@@ -96,7 +97,7 @@ function speak(list, names, preferName) {
   return pick(pool).replaceAll('{name}', names.user).replaceAll('{pet}', names.pet);
 }
 
-export default function Buddy({ mood = 'okay', cue, companion }) {
+export default function Buddy({ mood = 'okay', cue, companion, sound = false }) {
   const kind = companion?.kind || 'robot';
   const style = companion?.style || 'plain';
   const names = { user: companion?.user || '', pet: buddyName(companion) };
@@ -111,18 +112,19 @@ export default function Buddy({ mood = 'okay', cue, companion }) {
   const pokes = useRef([]);
   const press = useRef(null);
   const skipClick = useRef(false);
-  const latest = useRef({ mood, names, kind });
-  latest.current = { mood, names, kind };
+  const latest = useRef({ mood, names, kind, sound });
+  latest.current = { mood, names, kind, sound };
 
-  function show(spec, { lines, preferName } = {}) {
+  function show(spec, { lines, preferName, voice } = {}) {
     clearTimeout(timer.current);
     const say = speak(lines || spec.say, latest.current.names, preferName);
     setReaction({ ...spec, say, key: Math.random() });
     timer.current = setTimeout(() => setReaction(null), spec.ms || 1900);
+    if (voice && latest.current.sound) playBuddySound(latest.current.kind, voice);
   }
 
   useEffect(() => {
-    if (cue && REACTIONS[cue.type]) show(REACTIONS[cue.type], { preferName: cue.type === 'meet' });
+    if (cue && REACTIONS[cue.type]) show(REACTIONS[cue.type], { preferName: cue.type === 'meet', voice: cue.type });
   }, [cue]);
 
   useEffect(() => {
@@ -196,6 +198,7 @@ export default function Buddy({ mood = 'okay', cue, companion }) {
       clearTimeout(homeTimer.current);
       setReaction(null);
       setHome(false);
+      if (latest.current.sound) playBuddySound(latest.current.kind, 'wheee');
     }
     setDrag({ x: dx, y: dy });
   }
@@ -211,7 +214,7 @@ export default function Buddy({ mood = 'okay', cue, companion }) {
     setDrag(null);
     setHome(true);
     homeTimer.current = setTimeout(() => setHome(false), 600);
-    show(REACTIONS.boing);
+    show(REACTIONS.boing, { voice: 'boing' });
   }
 
   function onClick() {
@@ -221,14 +224,14 @@ export default function Buddy({ mood = 'okay', cue, companion }) {
     pokes.current.push(now);
     if (pokes.current.length >= 5) {
       pokes.current = [];
-      show(REACTIONS.dizzy);
+      show(REACTIONS.dizzy, { voice: 'dizzy' });
       return;
     }
     if (latest.current.mood === 'sad' && Math.random() < 0.4) {
-      show(REACTIONS.pokesad);
+      show(REACTIONS.pokesad, { voice: 'pokesad' });
       return;
     }
-    show(REACTIONS.poke, { lines: [...REACTIONS.poke.say, ...(KIND_POKES[latest.current.kind] || [])] });
+    show(REACTIONS.poke, { lines: [...REACTIONS.poke.say, ...(KIND_POKES[latest.current.kind] || [])], voice: 'poke' });
   }
 
   const face = FACES[drag ? 'wheee' : reaction?.face || mood] || FACES.okay;
