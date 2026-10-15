@@ -59,7 +59,7 @@ function cleanSent(value, legacyDay, legacyTime) {
   return sent.sort().slice(-60);
 }
 
-export const COMPANION_KINDS = ['robot', 'cat', 'puppy', 'bunny', 'panda'];
+export const COMPANION_KINDS = ['robot', 'cat', 'puppy', 'bunny', 'panda', 'pig'];
 export const COMPANION_STYLES = ['plain', 'girl', 'boy'];
 
 export function cleanCompanion(value) {

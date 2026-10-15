@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { playBuddySound } from './sounds';
 
-export const KIND_LABELS = { robot: 'Robot', cat: 'Cat', puppy: 'Puppy', bunny: 'Bunny', panda: 'Panda' };
+export const KIND_LABELS = { robot: 'Robot', cat: 'Cat', puppy: 'Puppy', bunny: 'Bunny', panda: 'Panda', pig: 'Pig' };
 export const STYLE_LABELS = { plain: 'Plain', girl: 'Girl', boy: 'Boy' };
 
-const DEFAULT_NAMES = { robot: 'Robo', cat: 'Mochi', puppy: 'Biscuit', bunny: 'Bun', panda: 'Bao' };
+const DEFAULT_NAMES = { robot: 'Robo', cat: 'Mochi', puppy: 'Biscuit', bunny: 'Bun', panda: 'Bao', pig: 'Truffle' };
 
 export function buddyName(companion) {
   return companion?.name || DEFAULT_NAMES[companion?.kind] || DEFAULT_NAMES.robot;
@@ -69,11 +69,12 @@ const KIND_POKES = {
   puppy: ['Woof!', 'Arf arf!'],
   bunny: ['Hop hop!'],
   panda: ['Nom nom!'],
+  pig: ['Oink!', 'Oink oink!', 'Snrk!'],
 };
 
 const MOOD_WORDS = { okay: 'calm', happy: 'happy', proud: 'proud', sad: 'sad' };
 
-const BOW_SPOTS = { robot: [45.5, 12.5], cat: [44, 17.5], puppy: [45, 14.5], bunny: [44, 21], panda: [45, 15] };
+const BOW_SPOTS = { robot: [45.5, 12.5], cat: [44, 17.5], puppy: [45, 14.5], bunny: [44, 21], panda: [45, 15], pig: [44, 16] };
 
 const BITS = [
   [-26, -20],
@@ -302,7 +303,13 @@ function Face({ kind, style, face, look, shut }) {
       </g>
       {face.brow ? <path d="M36.5 23.2 L43.5 21.8" className="e-line thin" /> : null}
       <Nose kind={kind} />
-      <Mouth kind={face.mouth} />
+      {kind === 'pig' ? (
+        <g transform="translate(0 7)">
+          <Mouth kind={face.mouth} />
+        </g>
+      ) : (
+        <Mouth kind={face.mouth} />
+      )}
       {face.sweat ? (
         <path d="M48 20c1.6 2.3 2.4 3.6 2.4 4.7a2.4 2.4 0 0 1-4.8 0c0-1.1.8-2.4 2.4-4.7z" className="f-drop" />
       ) : null}
@@ -363,6 +370,17 @@ function Head({ kind }) {
       </>
     );
   }
+  if (kind === 'pig') {
+    return (
+      <>
+        <path d="M12.5 23 L11.5 7 L26 13.5 Z" className="b-fur" />
+        <path d="M15.2 18.6 L14.8 10.8 L22 14.2 Z" className="b-inner" />
+        <path d="M51.5 23 L52.5 7 L38 13.5 Z" className="b-fur" />
+        <path d="M48.8 18.6 L49.2 10.8 L42 14.2 Z" className="b-inner" />
+        <ellipse cx="32" cy="34" rx="25" ry="21" className="b-fur" />
+      </>
+    );
+  }
   if (kind === 'panda') {
     return (
       <>
@@ -391,6 +409,15 @@ function Nose({ kind }) {
   if (kind === 'cat' || kind === 'bunny') return <path d="M30.3 35.4 h3.4 l-1.7 2 z" className="b-nose" />;
   if (kind === 'puppy') return <ellipse cx="32" cy="36.4" rx="2.6" ry="1.8" className="b-nose" />;
   if (kind === 'panda') return <ellipse cx="32" cy="36.6" rx="2.3" ry="1.5" className="b-nose" />;
+  if (kind === 'pig') {
+    return (
+      <>
+        <ellipse cx="32" cy="39" rx="8.5" ry="5.8" className="b-snout" />
+        <ellipse cx="29" cy="39" rx="1.4" ry="2.1" className="b-nose" />
+        <ellipse cx="35" cy="39" rx="1.4" ry="2.1" className="b-nose" />
+      </>
+    );
+  }
   return null;
 }
 

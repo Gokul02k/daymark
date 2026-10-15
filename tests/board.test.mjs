@@ -349,6 +349,7 @@ test('the companion keeps the newest choice, and unknown choices fall back to th
   assert.equal(merged.companion.kind, 'cat');
   assert.equal(merged.companion.style, 'girl');
   assert.equal(merged.companion.user, 'Gokul');
+  assert.equal(cleanCompanion({ kind: 'pig', style: 'boy' }).kind, 'pig');
   assert.deepEqual(cleanCompanion({ kind: 'dragon', style: 'fancy', name: '  ' }), {
     kind: 'robot',
     style: 'plain',
