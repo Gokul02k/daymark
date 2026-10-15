@@ -56,7 +56,21 @@ function cleanSent(value, legacyDay, legacyTime) {
   const day = cleanDue(legacyDay);
   const time = cleanTime(legacyTime);
   if (day && time) add(`${day} ${time}`);
-  return sent.sort();
+  return sent.sort().slice(-60);
+}
+
+export const COMPANION_KINDS = ['robot', 'cat', 'puppy', 'bunny', 'panda'];
+export const COMPANION_STYLES = ['plain', 'girl', 'boy'];
+
+export function cleanCompanion(value) {
+  const base = value && typeof value === 'object' ? value : {};
+  return {
+    kind: COMPANION_KINDS.includes(base.kind) ? base.kind : 'robot',
+    style: COMPANION_STYLES.includes(base.style) ? base.style : 'plain',
+    name: cleanTitle(base.name, 24),
+    user: cleanTitle(base.user, 32),
+    updatedAt: typeof base.updatedAt === 'string' ? base.updatedAt : null,
+  };
 }
 
 export function validZone(value) {
@@ -178,7 +192,9 @@ export function normalizeBoard(raw) {
     checks,
     tombstones,
     notifyTimes: cleanTimes(base.notifyTimes, base.notifyAt),
+    notifyTimesAt: typeof base.notifyTimesAt === 'string' ? base.notifyTimesAt : null,
     notifySent: cleanSent(base.notifySent, base.notifyOn, base.notifyAt),
+    companion: cleanCompanion(base.companion),
     updatedAt: base.updatedAt || new Date(0).toISOString(),
   };
 }
@@ -471,7 +487,9 @@ export function mergeBoards(left, right) {
   const habits = mergeById(a.habits, b.habits, tombstones);
   const checks = mergeById(a.checks, b.checks, tombstones);
   const live = new Set([...lists, ...tasks, ...entries, ...habits, ...checks].map((record) => record.id));
-  const newer = (a.updatedAt || '') >= (b.updatedAt || '') ? a : b;
+  const later = (x, y, at) => ((at(x) || '') >= (at(y) || '') ? x : y);
+  let times = later(a, b, (board) => board.updatedAt);
+  if (a.notifyTimesAt || b.notifyTimesAt) times = later(a, b, (board) => board.notifyTimesAt);
   return {
     lists,
     tasks,
@@ -479,8 +497,10 @@ export function mergeBoards(left, right) {
     habits,
     checks,
     tombstones: tombstones.filter((tomb) => !live.has(tomb.id)),
-    notifyTimes: newer.notifyTimes || [],
-    notifySent: newer.notifySent || [],
+    notifyTimes: times.notifyTimes,
+    notifyTimesAt: times.notifyTimesAt,
+    notifySent: [...new Set([...a.notifySent, ...b.notifySent])].sort().slice(-60),
+    companion: later(a.companion, b.companion, (companion) => companion.updatedAt),
     updatedAt: a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt,
   };
 }

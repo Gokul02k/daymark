@@ -58,7 +58,7 @@ import {
   savePersisted,
   saveSelectedList,
 } from './lib/storage';
-import Robot from './robot';
+import Buddy, { BuddyPreview, KIND_LABELS, STYLE_LABELS, defaultBuddyName } from './companion';
 
 const GROUPS = [
   ['overdue', 'Overdue'],
@@ -93,9 +93,8 @@ export default function HomePage() {
   const [logText, setLogText] = useState('');
   const [habitText, setHabitText] = useState('');
   const [composer, setComposer] = useState(null);
-  const [robotCue, setRobotCue] = useState(null);
-  const [notifyOpen, setNotifyOpen] = useState(false);
-  const [notifyTimes, setNotifyTimes] = useState(['09:00']);
+  const [buddyCue, setBuddyCue] = useState(null);
+  const [settings, setSettings] = useState(null);
   const [habitSheet, setHabitSheet] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [syncMode, setSyncMode] = useState('device');
@@ -293,7 +292,7 @@ export default function HomePage() {
     checkReminders();
   }, [state]);
 
-  const sheetOpen = Boolean(sheet) || Boolean(habitSheet) || Boolean(composer) || notifyOpen;
+  const sheetOpen = Boolean(sheet) || Boolean(habitSheet) || Boolean(composer);
   useEffect(() => {
     if (!sheetOpen) return undefined;
     const onKey = (event) => {
@@ -301,7 +300,6 @@ export default function HomePage() {
       setSheet(null);
       setHabitSheet(null);
       setComposer(null);
-      setNotifyOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -313,7 +311,7 @@ export default function HomePage() {
   }
 
   function cue(type) {
-    setRobotCue({ type, at: Date.now() + Math.random() });
+    setBuddyCue({ type, at: Date.now() + Math.random() });
   }
 
   function toggleTask(id, done) {
@@ -480,25 +478,54 @@ export default function HomePage() {
     });
   }
 
-  function openNotify() {
-    setNotifyTimes(state.notifyTimes?.length ? state.notifyTimes : ['09:00']);
+  function openSettings() {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    const { kind, style, name, user } = state.companion;
     setRemindHint('');
-    setNotifyOpen(true);
+    setSettings({ kind, style, name, user, theme, startTheme: theme, times: (state.notifyTimes || []).slice() });
   }
 
-  function changeNotifyTime(index, value) {
-    setNotifyTimes((current) => current.map((time, item) => (item === index ? value : time)));
+  function previewTheme(next) {
+    setTheme(applyTheme(next));
+    setSettings((current) => current && { ...current, theme: next });
   }
 
-  async function saveNotify(event) {
+  function cancelSettings() {
+    if (settings && settings.theme !== settings.startTheme) setTheme(applyTheme(settings.startTheme));
+    setSettings(null);
+  }
+
+  async function saveSettings(event) {
     event.preventDefault();
-    const times = [...new Set(notifyTimes.filter((time) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))].sort();
-    if (times.length === 0) return;
-    if (!(await allowReminders())) return;
-    const same = times.join() === (state.notifyTimes || []).join();
-    apply({ ...state, notifyTimes: times, notifySent: same ? state.notifySent : [] });
-    cue('remind');
-    setNotifyOpen(false);
+    if (!settings) return;
+    const times = [...new Set(settings.times.filter((time) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))].sort();
+    const before = state.notifyTimes || [];
+    const timesChanged = times.join() !== before.join();
+    if (timesChanged && times.length > 0 && !(await allowReminders())) return;
+    const now = new Date();
+    const at = now.toISOString();
+    const old = state.companion;
+    const companion = {
+      kind: settings.kind,
+      style: settings.style,
+      name: cleanTitle(settings.name, 24),
+      user: cleanTitle(settings.user, 32),
+    };
+    const companionChanged = ['kind', 'style', 'name', 'user'].some((key) => companion[key] !== old[key]);
+    let next = state;
+    if (companionChanged) next = { ...next, companion: { ...companion, updatedAt: at } };
+    if (timesChanged) {
+      const today = todayKey(now);
+      const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const sent = new Set(next.notifySent || []);
+      for (const time of times) if (!before.includes(time) && time <= clock) sent.add(`${today} ${time}`);
+      next = { ...next, notifyTimes: times, notifyTimesAt: at, notifySent: [...sent].sort() };
+    }
+    if (next !== state) apply({ ...next, updatedAt: at });
+    setSettings(null);
+    if (companionChanged && companion.user && companion.user !== old.user) cue('meet');
+    else if (companionChanged) cue('newlook');
+    else if (timesChanged && times.length > 0) cue('remind');
   }
 
   function onToggleHabit(habitId, day, done) {
@@ -691,7 +718,7 @@ export default function HomePage() {
     <main className={[view === 'activity' ? '' : 'home', undo ? 'has-undo' : ''].filter(Boolean).join(' ') || undefined}>
       <header className="top">
         <div className="brand">
-          <Robot mood={moodFor(state, today)} cue={robotCue} />
+          <Buddy mood={moodFor(state, today)} cue={buddyCue} companion={state.companion} />
           <div>
             <h1>
               Daymark
@@ -717,26 +744,8 @@ export default function HomePage() {
           </div>
         </div>
         <div className="top-actions">
-          <button
-            type="button"
-            className={state.notifyTimes?.length ? 'themebtn armed' : 'themebtn'}
-            aria-label={
-              state.notifyTimes?.length
-                ? `Notifications at ${state.notifyTimes.map((time) => clockLabel(time)).join(', ')}`
-                : 'Set notification times'
-            }
-            onClick={openNotify}
-          >
-            <BellIcon />
-          </button>
-          <button
-            type="button"
-            className="themebtn"
-            aria-pressed={theme === 'dark'}
-            aria-label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'}
-            onClick={() => setTheme(applyTheme(theme === 'dark' ? 'light' : 'dark'))}
-          >
-            <ThemeIcon dark={theme === 'dark'} />
+          <button type="button" className="iconbtn" aria-label="Settings" onClick={openSettings}>
+            <GearIcon />
           </button>
           {installEvent ? (
             <button type="button" className="install" onClick={onInstall}>
@@ -1001,21 +1010,15 @@ export default function HomePage() {
         />
       ) : null}
 
-      {notifyOpen ? (
-        <NotifySheet
-          times={notifyTimes}
-          enabled={Boolean(state.notifyTimes?.length)}
+      {settings ? (
+        <SettingsSheet
+          draft={settings}
           hint={remindHint}
           pushState={pushState}
-          onTime={changeNotifyTime}
-          onAdd={() => setNotifyTimes((current) => (current.length >= 6 ? current : [...current, '18:00']))}
-          onRemove={(index) => setNotifyTimes((current) => current.filter((_, item) => item !== index))}
-          onSubmit={saveNotify}
-          onClear={() => {
-            apply({ ...state, notifyTimes: [], notifySent: [] });
-            setNotifyOpen(false);
-          }}
-          onClose={() => setNotifyOpen(false)}
+          onChange={setSettings}
+          onTheme={previewTheme}
+          onSave={saveSettings}
+          onCancel={cancelSettings}
         />
       ) : null}
 
@@ -1475,76 +1478,197 @@ function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onList, onS
   );
 }
 
-function NotifySheet({ times, enabled, hint, pushState, onTime, onAdd, onRemove, onSubmit, onClear, onClose }) {
+function SettingsSheet({ draft, hint, pushState, onChange, onTheme, onSave, onCancel }) {
+  const set = (patch) => onChange({ ...draft, ...patch });
+  const pet = draft.name.trim() || defaultBuddyName(draft.kind);
+  const times = draft.times;
+  let timesNote = 'Add a time to get a note about the habits and tasks still open that day.';
+  if (times.length > 0) {
+    timesNote =
+      pushState === 'exact'
+        ? 'A note at each time about habits and tasks still open today, even when Daymark is closed.'
+        : 'A note at each time about habits and tasks still open today, while Daymark is open.';
+  }
   return (
     <div
       className="backdrop"
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <form className="sheet" role="dialog" aria-modal="true" aria-label="Notification times" onSubmit={onSubmit}>
-        <p className="sheet-title">Daily notifications</p>
-        <p className="note">
-          Daymark sends a note at each time about habits and tasks still open today.
-          {pushState === 'exact' ? ' It arrives even when Daymark is closed.' : ' It arrives while Daymark is open.'}
-        </p>
-        {times.map((time, index) => (
-          <div className="remindrow" key={index}>
-            <input
-              className="field timefield"
-              type="time"
-              value={time}
-              aria-label={`Reminder ${index + 1}`}
-              onChange={(event) => onTime(index, event.target.value)}
-              required
-            />
-            {times.length > 1 ? (
-              <button type="button" className="textbtn" onClick={() => onRemove(index)}>
+      <form
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        onSubmit={onSave}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onCancel();
+        }}
+      >
+        <p className="sheet-title">Settings</p>
+
+        <section className="settings-section">
+          <p className="label">Companion</p>
+          <div className="buddy-hero">
+            <BuddyPreview kind={draft.kind} style={draft.style} />
+            <div>
+              <strong>{pet}</strong>
+              <p className="note">{draft.user.trim() ? `Hi ${draft.user.trim()}, I'm ${pet}!` : `Hi, I'm ${pet}!`}</p>
+            </div>
+          </div>
+          <div className="kinds" role="group" aria-label="Character">
+            {Object.entries(KIND_LABELS).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                className={draft.kind === kind ? 'kind on' : 'kind'}
+                aria-pressed={draft.kind === kind}
+                onClick={() => set({ kind })}
+              >
+                <BuddyPreview kind={kind} style={draft.style} small />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="choices" role="group" aria-label="Style">
+            {Object.entries(STYLE_LABELS).map(([style, label]) => (
+              <button
+                key={style}
+                type="button"
+                className={draft.style === style ? 'chip on' : 'chip'}
+                aria-pressed={draft.style === style}
+                onClick={() => set({ style })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="namefields">
+            <label>
+              Your name
+              <input
+                className="field"
+                value={draft.user}
+                onChange={(event) => set({ user: event.target.value })}
+                placeholder="Type your name"
+                maxLength={32}
+                autoComplete="given-name"
+              />
+            </label>
+            <label>
+              Its name
+              <input
+                className="field"
+                value={draft.name}
+                onChange={(event) => set({ name: event.target.value })}
+                placeholder={defaultBuddyName(draft.kind)}
+                maxLength={24}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <p className="label">Theme</p>
+          <div className="choices" role="group" aria-label="Theme">
+            <button
+              type="button"
+              className={draft.theme === 'light' ? 'chip on' : 'chip'}
+              aria-pressed={draft.theme === 'light'}
+              onClick={() => onTheme('light')}
+            >
+              <SunIcon />
+              Light
+            </button>
+            <button
+              type="button"
+              className={draft.theme === 'dark' ? 'chip on' : 'chip'}
+              aria-pressed={draft.theme === 'dark'}
+              onClick={() => onTheme('dark')}
+            >
+              <MoonIcon />
+              Dark
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <p className="label">Daily reminders</p>
+          <p className="note">{timesNote}</p>
+          {times.map((time, index) => (
+            <div className="remindrow" key={index}>
+              <input
+                className="field timefield"
+                type="time"
+                value={time}
+                aria-label={`Reminder ${index + 1}`}
+                onChange={(event) => set({ times: times.map((item, at) => (at === index ? event.target.value : item)) })}
+                required
+              />
+              <button type="button" className="textbtn" onClick={() => set({ times: times.filter((_, at) => at !== index) })}>
                 Remove
               </button>
-            ) : null}
-          </div>
-        ))}
-        {times.length < 6 ? (
-          <button type="button" className="textbtn" onClick={onAdd}>
-            Add another time
+            </div>
+          ))}
+          {times.length < 6 ? (
+            <button
+              type="button"
+              className="textbtn"
+              onClick={() => set({ times: [...times, times.length === 0 ? '09:00' : '18:00'] })}
+            >
+              {times.length === 0 ? 'Add a time' : 'Add another time'}
+            </button>
+          ) : null}
+          {hint ? <p className="hint tight">{hint}</p> : null}
+        </section>
+
+        <div className="sheet-actions">
+          <button type="button" className="textbtn" onClick={onCancel}>
+            Cancel
           </button>
-        ) : null}
-        {hint ? <p className="hint tight">{hint}</p> : null}
-        <div className="sheet-actions spread">
-          {enabled ? (
-            <button type="button" className="textbtn danger" onClick={onClear}>
-              Turn off
-            </button>
-          ) : (
-            <span />
-          )}
-          <span className="sheet-actions">
-            <button type="button" className="textbtn" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="primary">
-              Save
-            </button>
-          </span>
+          <button type="submit" className="primary">
+            Save
+          </button>
         </div>
       </form>
     </div>
   );
 }
 
-function BellIcon() {
+const ICON_PEN = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+};
+
+function GearIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2" {...ICON_PEN} />
       <path
-        d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9zM10 18a2 2 0 0 0 4 0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.7 7.7 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.7 7.7 0 0 0 2.6-1.5l2.4 1 2-3.4z"
+        {...ICON_PEN}
       />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" {...ICON_PEN} />
+      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" {...ICON_PEN} />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" {...ICON_PEN} />
     </svg>
   );
 }
@@ -1781,29 +1905,6 @@ function ProgressBar({ label, tone, value, max, caption }) {
         <span style={{ width: `${width}%` }} />
       </div>
     </div>
-  );
-}
-
-function ThemeIcon({ dark }) {
-  const pen = {
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.8,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-  };
-  if (dark) {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="4" {...pen} />
-        <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" {...pen} />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" {...pen} />
-    </svg>
   );
 }
 
@@ -2137,7 +2238,9 @@ function signature(board) {
     checks: board.checks,
     tombstones: board.tombstones,
     notifyTimes: board.notifyTimes,
+    notifyTimesAt: board.notifyTimesAt,
     notifySent: board.notifySent,
+    companion: board.companion,
   });
 }
 

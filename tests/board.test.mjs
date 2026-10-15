@@ -13,6 +13,7 @@ import {
   todayPlan,
   addList,
   addTask,
+  cleanCompanion,
   dayActivity,
   deleteEntry,
   restoreEntries,
@@ -316,4 +317,43 @@ test('each saved time can send its own daily note', () => {
   assert.match(dailyDigest(board, '2026-10-15').body, /Drink water/);
   const kept = mergeBoards({ ...emptyBoard(), updatedAt: '2026-10-01T00:00:00.000Z' }, board);
   assert.deepEqual(kept.notifyTimes, ['09:00', '18:00']);
+});
+
+test('reminder times and sent notes survive a newer edit on another device', () => {
+  const phone = {
+    ...emptyBoard(),
+    notifyTimes: ['07:30'],
+    notifyTimesAt: '2026-10-15T08:00:00.000Z',
+    notifySent: ['2026-10-15 07:30'],
+    updatedAt: '2026-10-15T08:00:00.000Z',
+  };
+  const laptop = {
+    ...addTask(emptyBoard(), { title: 'Later edit' }),
+    notifyTimes: ['09:00'],
+    notifySent: ['2026-10-14 09:00'],
+  };
+  const merged = mergeBoards(laptop, phone);
+  assert.deepEqual(merged.notifyTimes, ['07:30']);
+  assert.deepEqual(merged.notifySent, ['2026-10-14 09:00', '2026-10-15 07:30']);
+  assert.equal(merged.tasks.length, 1);
+});
+
+test('the companion keeps the newest choice, and unknown choices fall back to the robot', () => {
+  const phone = {
+    ...emptyBoard(),
+    companion: { kind: 'cat', style: 'girl', name: 'Mochi', user: 'Gokul', updatedAt: '2026-10-15T10:00:00.000Z' },
+    updatedAt: '2026-10-15T10:00:00.000Z',
+  };
+  const laptop = addTask(emptyBoard(), { title: 'Edited after' });
+  const merged = mergeBoards(laptop, phone);
+  assert.equal(merged.companion.kind, 'cat');
+  assert.equal(merged.companion.style, 'girl');
+  assert.equal(merged.companion.user, 'Gokul');
+  assert.deepEqual(cleanCompanion({ kind: 'dragon', style: 'fancy', name: '  ' }), {
+    kind: 'robot',
+    style: 'plain',
+    name: '',
+    user: '',
+    updatedAt: null,
+  });
 });
