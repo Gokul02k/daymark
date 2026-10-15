@@ -48,6 +48,8 @@
   --cal-missed-border: #f0c2a4;
   --backdrop: rgba(28, 25, 21, 0.42);
   --sheet-shadow: 0 -16px 40px rgba(28, 25, 21, 0.12);
+  --well: rgba(255, 252, 248, 0.8);
+  --bar-shadow: 0 8px 16px rgba(28, 25, 21, 0.16);
   --dock-bar: 4.35rem;
   --dock: calc(var(--dock-bar) + env(safe-area-inset-bottom, 0px));
   --plot: 136px;
@@ -103,6 +105,8 @@ html[data-theme="dark"] {
   --cal-missed-border: #d4a574;
   --backdrop: rgba(0, 0, 0, 0.62);
   --sheet-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
+  --well: rgba(255, 255, 255, 0.05);
+  --bar-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; }
@@ -377,6 +381,73 @@ h2 {
 .unlock button:disabled,
 .primary:disabled { opacity: 0.45; }
 
+.themebtn.armed { color: var(--ok); border-color: var(--ok); }
+
+.fab {
+  position: fixed;
+  z-index: 32;
+  right: max(1rem, calc((100% - 40rem) / 2 + 1rem));
+  bottom: calc(var(--dock) + 0.9rem);
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--on-ok);
+  font-size: 2rem;
+  line-height: 1;
+  box-shadow: var(--bar-shadow, var(--shadow));
+}
+
+.has-undo .fab { bottom: calc(var(--dock) + 5.2rem); }
+.home { padding-bottom: calc(var(--dock) + 5.4rem); }
+.home.has-undo { padding-bottom: calc(var(--dock) + 9.4rem); }
+
+.pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.9rem 0 0.15rem;
+}
+
+.pending-label {
+  margin-right: 0.1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0.1rem 0.65rem 0.1rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.pillbox {
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: none;
+  border: 1.5px solid var(--box-border);
+  border-radius: 4px;
+  background: var(--box-fill);
+}
+
+.tasks.compact .check { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+.tasks.compact .body { padding: 0.3rem 0; }
+.tasks.compact .dots { gap: 3px; }
+.tasks.compact .dot { width: 7px; height: 7px; }
+
 .dock {
   position: fixed;
   z-index: 30;
@@ -386,7 +457,7 @@ h2 {
   width: min(40rem, 100%);
   height: var(--dock);
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 0.25rem;
   padding: 0.4rem 0.55rem env(safe-area-inset-bottom, 0px);
   border-top: 1px solid var(--line);
@@ -509,7 +580,14 @@ h2 {
 .track.habit > span { background: var(--habit); }
 .track.work > span { background: var(--ok); }
 
-.chart { margin-top: 0.15rem; }
+.chart {
+  margin-top: 0.2rem;
+  padding: 0.75rem 0.35rem 0.15rem 0.15rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 70% at 80% 0%, var(--ok-soft), transparent 58%),
+    var(--bg);
+}
 
 .plot { position: relative; }
 
@@ -518,7 +596,7 @@ h2 {
   z-index: 0;
   left: 0;
   right: 0;
-  top: 1rem;
+  top: 1.35rem;
   height: var(--plot);
   display: flex;
   flex-direction: column;
@@ -529,7 +607,7 @@ h2 {
 .gridline {
   position: relative;
   border-top: 1px dashed var(--gridline);
-  margin-left: 1.45rem;
+  margin-left: 1.35rem;
 }
 
 .grid.solo { justify-content: flex-end; }
@@ -550,51 +628,70 @@ h2 {
   z-index: 1;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.15rem;
-  margin-left: 1.45rem;
+  gap: 0.28rem;
 }
 
 .col { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 
 .count {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  height: 1rem;
+  height: 1.15rem;
+  margin-bottom: 0.2rem;
   color: var(--text);
   font-size: 0.68rem;
   font-weight: 700;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
-.bars {
+.count:not(:empty) {
+  min-width: 1.2rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.well {
   width: 100%;
   height: var(--plot);
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 2px;
-  border-bottom: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.col.today .bars { border-bottom-color: var(--ok); }
+.col.today .well {
+  background: var(--ok-soft);
+  box-shadow: inset 0 0 0 1.5px var(--ok);
+}
 
 .bar.stack {
-  width: 46%;
-  max-width: 22px;
-  min-width: 12px;
+  width: 68%;
+  max-width: 18px;
+  min-width: 10px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  border-radius: 7px 7px 3px 3px;
+  border-radius: 999px;
   overflow: hidden;
+  box-shadow: var(--bar-shadow);
 }
 
 .seg { display: block; width: 100%; flex-basis: 0; min-height: 0; }
-.seg.ontime, .key.ontime { background: var(--ok); }
-.seg.late, .key.late { background: var(--late-bar); }
-.seg.habit, .key.habit { background: var(--habit); }
-.seg.logged, .key.logged { background: var(--logged); }
+.seg + .seg { box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.16); }
+.seg.ontime { background: linear-gradient(180deg, color-mix(in srgb, white 30%, var(--ok)), var(--ok)); }
+.seg.late { background: linear-gradient(180deg, color-mix(in srgb, white 26%, var(--late-bar)), var(--late-bar)); }
+.seg.habit { background: linear-gradient(180deg, color-mix(in srgb, white 24%, var(--habit)), var(--habit)); }
+.seg.logged { background: linear-gradient(180deg, color-mix(in srgb, white 24%, var(--logged)), var(--logged)); }
+.key.ontime { background: var(--ok); }
+.key.late { background: var(--late-bar); }
+.key.habit { background: var(--habit); }
+.key.logged { background: var(--logged); }
 
 .daylabel {
   display: flex;
@@ -627,19 +724,27 @@ h2 {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem 0.85rem;
-  margin: 0.8rem 0 0;
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.5rem 0.22rem 0.38rem;
+  border-radius: 999px;
+  background: var(--bg);
 }
 
 .key {
   display: inline-block;
-  width: 0.55rem;
-  height: 0.55rem;
-  margin-right: 0.3rem;
-  border-radius: 2px;
-  vertical-align: 0.05em;
+  width: 0.48rem;
+  height: 0.48rem;
+  margin-right: 0.32rem;
+  border-radius: 50%;
 }
 
 .meters {

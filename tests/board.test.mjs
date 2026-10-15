@@ -18,7 +18,10 @@ import {
   restoreEntries,
   deleteList,
   dayInZone,
+  dailyDigest,
   defaultRemindAt,
+  digestDue,
+  markDigest,
   deleteTask,
   dueChoice,
   emptyBoard,
@@ -293,4 +296,21 @@ test('two devices keep a new task and a deletion', () => {
   const merged = mergeBoards(phone, removed.board);
   assert.equal(merged.tasks.some((task) => task.title === 'From phone'), true);
   assert.equal(merged.tasks.some((task) => task.title === 'Shared'), false);
+});
+
+test('a daily notification waits for its time, then names what is still open', () => {
+  let board = { ...emptyBoard(), notifyAt: '09:00' };
+  board = addHabit(board, 'Drink water');
+  board = addTask(board, { title: 'Call the dentist', dueAt: '2026-10-15' });
+  const morning = new Date(2026, 9, 15, 8, 59);
+  const due = new Date(2026, 9, 15, 9, 0);
+  assert.equal(digestDue(board, morning), false);
+  assert.equal(digestDue(board, due), true);
+  assert.match(dailyDigest(board, '2026-10-15').body, /Drink water/);
+  assert.match(dailyDigest(board, '2026-10-15').body, /Call the dentist/);
+  board = markDigest(board, '2026-10-15');
+  assert.equal(digestDue(board, due), false);
+  const kept = mergeBoards({ ...emptyBoard(), updatedAt: '2026-10-01T00:00:00.000Z' }, board);
+  assert.equal(kept.notifyAt, '09:00');
+  assert.equal(normalizeBoard({ notifyAt: '25:00' }).notifyAt, null);
 });

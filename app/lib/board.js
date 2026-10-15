@@ -152,6 +152,8 @@ export function normalizeBoard(raw) {
     habits,
     checks,
     tombstones,
+    notifyAt: cleanTime(base.notifyAt) || null,
+    notifyOn: cleanDue(base.notifyOn) || null,
     updatedAt: base.updatedAt || new Date(0).toISOString(),
   };
 }
@@ -444,6 +446,7 @@ export function mergeBoards(left, right) {
   const habits = mergeById(a.habits, b.habits, tombstones);
   const checks = mergeById(a.checks, b.checks, tombstones);
   const live = new Set([...lists, ...tasks, ...entries, ...habits, ...checks].map((record) => record.id));
+  const newer = (a.updatedAt || '') >= (b.updatedAt || '') ? a : b;
   return {
     lists,
     tasks,
@@ -451,6 +454,8 @@ export function mergeBoards(left, right) {
     habits,
     checks,
     tombstones: tombstones.filter((tomb) => !live.has(tomb.id)),
+    notifyAt: cleanTime(newer.notifyAt) || null,
+    notifyOn: cleanDue(newer.notifyOn) || null,
     updatedAt: a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt,
   };
 }
@@ -513,6 +518,60 @@ export function dueChoice(dueAt, today = todayKey()) {
   if (dueAt === today) return { kind: 'today', date: dueAt };
   if (dueAt === shiftDay(today, 1)) return { kind: 'tomorrow', date: dueAt };
   return { kind: 'pick', date: dueAt };
+}
+
+export function clockInZone(timeZone, date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type).value;
+    return `${part('hour')}:${part('minute')}`;
+  } catch {
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+}
+
+/** True once the chosen clock time has arrived today and the daily note has not been sent. */
+export function digestDue(board, now = new Date(), zone) {
+  const time = cleanTime(board?.notifyAt);
+  if (!time) return false;
+  const today = zone ? dayInZone(zone, now) : todayKey(now);
+  if (board.notifyOn === today) return false;
+  const clock = zone
+    ? clockInZone(zone, now)
+    : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return clock >= time;
+}
+
+/** Habits still open today, plus tasks still due, for the daily notification. */
+export function dailyDigest(board, today = todayKey()) {
+  const plan = todayPlan(board, today);
+  const habits = plan.habits.filter((habit) => habitScheduled(habit, today) && !habitChecked(board, habit.id, today));
+  const names = [...habits.map((habit) => habit.name), ...plan.tasks.map((task) => task.title)];
+  if (names.length === 0) return null;
+  const shown = names.slice(0, 3).join(', ');
+  const more = names.length > 3 ? `, and ${names.length - 3} more` : '';
+  const body = names.length === 1 ? `${names[0]} is still open today` : `${names.length} still open today: ${shown}${more}`;
+  return { title: 'Daymark', body, tag: 'daymark-daily' };
+}
+
+export function markDigest(board, today) {
+  if (board.notifyOn === today) return board;
+  return touch({ ...board, notifyOn: today });
+}
+
+/** The next time `HH:MM` occurs in `zone`. */
+export function nextDigestAt(notifyAt, zone, now = Date.now()) {
+  const time = cleanTime(notifyAt);
+  if (!time || !zone) return null;
+  const today = dayInZone(zone, new Date(now));
+  const todayAt = reminderInstant({ dueAt: today, remindAt: time, remindTz: zone }, zone);
+  if (todayAt > now) return todayAt;
+  return reminderInstant({ dueAt: shiftDay(today, 1), remindAt: time, remindTz: zone }, zone);
 }
 
 export function dayInZone(timeZone, date = new Date()) {

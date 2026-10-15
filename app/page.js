@@ -12,8 +12,10 @@ import {
   childrenOf,
   cleanTitle,
   DEFAULT_REMIND_AT,
+  dailyDigest,
   dayActivity,
   defaultRemindAt,
+  digestDue,
   deleteEntry,
   deleteHabit,
   deleteList,
@@ -22,6 +24,7 @@ import {
   dueChoice,
   groupOpenTasks,
   habitChecked,
+  markDigest,
   habitScheduled,
   habitStats,
   mergeBoards,
@@ -96,6 +99,9 @@ export default function HomePage() {
   const [view, setView] = useState('tasks');
   const [logText, setLogText] = useState('');
   const [habitText, setHabitText] = useState('');
+  const [composer, setComposer] = useState(null);
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notifyTime, setNotifyTime] = useState('09:00');
   const [habitSheet, setHabitSheet] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [syncMode, setSyncMode] = useState('device');
@@ -162,12 +168,19 @@ export default function HomePage() {
     const board = stateRef.current;
     if (!board || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const today = todayKey();
-    const due = remindersDue(board, Date.now(), localZone());
-    if (due.length === 0) return;
-    notify(reminderMessage(due, today));
+    const zone = localZone();
+    const due = remindersDue(board, Date.now(), zone);
     let next = board;
-    for (const task of due) next = updateTask(next, task.id, { remindedOn: reminderKey(task) });
-    apply(next);
+    if (due.length > 0) {
+      notify(reminderMessage(due, today));
+      for (const task of due) next = updateTask(next, task.id, { remindedOn: reminderKey(task) });
+    }
+    if (digestDue(next, new Date(), zone)) {
+      const digest = dailyDigest(next, today);
+      if (digest) notify(digest);
+      next = markDigest(next, today);
+    }
+    if (next !== board) apply(next);
   }
 
   async function preparePush() {
@@ -415,6 +428,35 @@ export default function HomePage() {
     if (next === state) return;
     apply(next);
     setHabitText('');
+    setComposer(null);
+  }
+
+  function startTask() {
+    setComposer(null);
+    openSheet({
+      editId: null,
+      child: false,
+      title: '',
+      kind: 'none',
+      date: '',
+      remind: false,
+      remindAt: state.notifyAt || DEFAULT_REMIND_AT,
+      priority: 'none',
+    });
+  }
+
+  function openNotify() {
+    setNotifyTime(state.notifyAt || '09:00');
+    setRemindHint('');
+    setNotifyOpen(true);
+  }
+
+  async function saveNotify(event) {
+    event.preventDefault();
+    if (!(await allowReminders())) return;
+    const same = state.notifyAt === notifyTime;
+    apply({ ...state, notifyAt: notifyTime, notifyOn: same ? state.notifyOn : null });
+    setNotifyOpen(false);
   }
 
   function onToggleHabit(habitId, day, done) {
@@ -588,7 +630,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className={undo ? 'has-undo' : undefined}>
+    <main className={[view === 'activity' ? '' : 'home', undo ? 'has-undo' : ''].filter(Boolean).join(' ') || undefined}>
       <header className="top">
         <div className="brand">
           <span className="logo" aria-hidden="true">
@@ -613,6 +655,14 @@ export default function HomePage() {
           </div>
         </div>
         <div className="top-actions">
+          <button
+            type="button"
+            className={state.notifyAt ? 'themebtn armed' : 'themebtn'}
+            aria-label={state.notifyAt ? `Notifications at ${clockLabel(state.notifyAt)}` : 'Set notification time'}
+            onClick={openNotify}
+          >
+            <BellIcon />
+          </button>
           <button
             type="button"
             className="themebtn"
@@ -665,19 +715,14 @@ export default function HomePage() {
           onLog={onLog}
           onDeleteEntry={onDeleteEntry}
         />
-      ) : view === 'habits' ? (
-        <HabitsView
-          board={state}
-          today={today}
-          habitText={habitText}
-          onHabitText={setHabitText}
-          onAddHabit={onAddHabit}
-          onToggleHabit={onToggleHabit}
-          onOpenHabit={openHabit}
-          onFinishTask={(id) => apply(setDone(state, id, true))}
-        />
       ) : (
         <>
+      <PendingStrip
+        board={state}
+        today={today}
+        onToggleHabit={onToggleHabit}
+        onFinishTask={(id) => apply(setDone(state, id, true))}
+      />
       <div className="lists">
         {state.lists.map((list) => (
           <button
@@ -713,19 +758,28 @@ export default function HomePage() {
         </button>
       ) : null}
 
-      <form className="add" onSubmit={onAdd}>
-        <input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Add a task"
-          aria-label="Task"
-          enterKeyHint="next"
-          maxLength={200}
-        />
-        <button type="submit">Add</button>
-      </form>
+      {planToday.habits.length > 0 ? (
+        <section>
+          <h2>Habits</h2>
+          <ul className="tasks compact">
+            {planToday.habits.map((habit) => (
+              <HabitRow
+                key={habit.id}
+                board={state}
+                habit={habit}
+                today={today}
+                week={Array.from({ length: 7 }, (_, index) => shiftDay(today, index - 6))}
+                onToggle={onToggleHabit}
+                onOpen={openHabit}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
-      {listEmpty ? <p className="hint empty">Add a task, then pick when it is due.</p> : null}
+      {listEmpty && planToday.habits.length === 0 ? (
+        <p className="hint empty">Tap + to add a task or a habit.</p>
+      ) : null}
 
       {GROUPS.map(([key, label]) =>
         groups[key].length === 0 ? null : (
@@ -792,13 +846,15 @@ export default function HomePage() {
           </ul>
         </section>
       ) : null}
+          <button type="button" className="fab" aria-label="Add" onClick={() => setComposer('pick')}>
+            +
+          </button>
         </>
       )}
 
       <nav className="dock" role="tablist" aria-label="View">
         {[
-          ['tasks', 'Tasks', openCount, groups.overdue.length > 0],
-          ['habits', 'Habits', habitLeft, false],
+          ['tasks', 'Home', openCount + habitLeft, groups.overdue.length > 0],
           ['activity', 'Activity', 0, false],
         ].map(([key, label, badge, warn]) => (
           <button
@@ -826,6 +882,37 @@ export default function HomePage() {
       ) : null}
 
       {showIosHint ? <p className="hint">To install on iPhone, tap Share, then Add to Home Screen.</p> : null}
+
+      {composer ? (
+        <AddChooser
+          mode={composer}
+          habitText={habitText}
+          onHabitText={setHabitText}
+          onTask={startTask}
+          onHabit={() => {
+            setHabitText('');
+            setComposer('habit');
+          }}
+          onSubmitHabit={onAddHabit}
+          onClose={() => setComposer(null)}
+        />
+      ) : null}
+
+      {notifyOpen ? (
+        <NotifySheet
+          time={notifyTime}
+          enabled={Boolean(state.notifyAt)}
+          hint={remindHint}
+          pushState={pushState}
+          onTime={setNotifyTime}
+          onSubmit={saveNotify}
+          onClear={() => {
+            apply({ ...state, notifyAt: null, notifyOn: null });
+            setNotifyOpen(false);
+          }}
+          onClose={() => setNotifyOpen(false)}
+        />
+      ) : null}
 
       {habitSheet ? (
         <HabitSheet
@@ -1091,6 +1178,134 @@ function HabitSheet({ board, draft, today, onChange, onToggleDay, onSave, onDele
   );
 }
 
+function PendingStrip({ board, today, onToggleHabit, onFinishTask }) {
+  const plan = todayPlan(board, today);
+  const habits = plan.habits.filter((habit) => habitScheduled(habit, today) && !habitChecked(board, habit.id, today));
+  if (habits.length + plan.tasks.length === 0) return null;
+  return (
+    <div className="pending">
+      <span className="pending-label">Today</span>
+      {habits.map((habit) => (
+        <button key={habit.id} type="button" className="pill" onClick={() => onToggleHabit(habit.id, today, true)}>
+          <span className="pillbox" aria-hidden="true" />
+          {habit.name}
+        </button>
+      ))}
+      {plan.tasks.map((task) => (
+        <button key={task.id} type="button" className="pill" onClick={() => onFinishTask(task.id)}>
+          <span className="pillbox" aria-hidden="true" />
+          {task.title}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onSubmitHabit, onClose }) {
+  return (
+    <div
+      className="backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <form className="sheet" role="dialog" aria-modal="true" aria-label="Add" onSubmit={onSubmitHabit}>
+        <p className="sheet-title">{mode === 'habit' ? 'New habit' : 'Add'}</p>
+        {mode === 'habit' ? (
+          <input
+            className="field"
+            value={habitText}
+            onChange={(event) => onHabitText(event.target.value)}
+            placeholder="Drink water"
+            aria-label="Habit"
+            maxLength={80}
+            autoFocus
+          />
+        ) : (
+          <div className="choices">
+            <button type="button" className="chip" onClick={onTask}>
+              Task
+            </button>
+            <button type="button" className="chip" onClick={onHabit}>
+              Habit
+            </button>
+          </div>
+        )}
+        <div className="sheet-actions">
+          <button type="button" className="textbtn" onClick={onClose}>
+            Cancel
+          </button>
+          {mode === 'habit' ? (
+            <button type="submit" className="primary" disabled={!cleanTitle(habitText)}>
+              Add habit
+            </button>
+          ) : null}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function NotifySheet({ time, enabled, hint, pushState, onTime, onSubmit, onClear, onClose }) {
+  return (
+    <div
+      className="backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <form className="sheet" role="dialog" aria-modal="true" aria-label="Notification time" onSubmit={onSubmit}>
+        <p className="sheet-title">Daily notification</p>
+        <p className="note">
+          Daymark sends one note at this time about habits and tasks still open today.
+          {pushState === 'exact' ? ' It arrives even when Daymark is closed.' : ' It arrives while Daymark is open.'}
+        </p>
+        <input
+          className="field timefield"
+          type="time"
+          value={time}
+          aria-label="Notification time"
+          onChange={(event) => onTime(event.target.value)}
+          required
+        />
+        {hint ? <p className="hint tight">{hint}</p> : null}
+        <div className="sheet-actions spread">
+          {enabled ? (
+            <button type="button" className="textbtn danger" onClick={onClear}>
+              Turn off
+            </button>
+          ) : (
+            <span />
+          )}
+          <span className="sheet-actions">
+            <button type="button" className="textbtn" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="primary">
+              Save
+            </button>
+          </span>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9zM10 18a2 2 0 0 0 4 0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function weekdayName(weekday) {
   return new Date(2026, 0, 4 + weekday).toLocaleDateString(undefined, { weekday: 'long' });
 }
@@ -1098,7 +1313,6 @@ function weekdayName(weekday) {
 function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }) {
   const week = activityWeek(board, today);
   const days = activityDays(board).slice(0, 30);
-  const standing = standingFor(board, today);
   const finished = week.reduce((sum, day) => sum + day.onTime + day.late, 0);
   const onTime = week.reduce((sum, day) => sum + day.onTime, 0);
   const logged = week.reduce((sum, day) => sum + day.logged, 0);
@@ -1119,9 +1333,7 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
       </form>
 
       <section className="panel">
-        <h2>Today</h2>
-        <DayStanding standing={standing} />
-        <h2 className="again">Last 7 days</h2>
+        <h2>Last 7 days</h2>
         <WeekChart week={week} today={today} />
         <div className="legend">
           <span>
@@ -1209,11 +1421,9 @@ function ActivityView({ board, today, logText, onLogText, onLog, onDeleteEntry }
 
 function WeekChart({ week, today }) {
   const totals = week.map((day) => day.onTime + day.late + day.habits + day.logged);
-  const raw = Math.max(0, ...totals);
-  const top = scaleTop(Math.max(1, raw));
-  const plot = 132;
+  const top = scaleTop(Math.max(1, ...totals));
+  const plot = 148;
   const height = (count) => (count > 0 ? Math.max(6, Math.round((count / top) * plot)) : 0);
-  const ticks = raw === 0 ? [0] : ticksFor(top);
   const label = week
     .map(
       (day) =>
@@ -1223,13 +1433,6 @@ function WeekChart({ week, today }) {
   return (
     <div className="chart" role="img" aria-label={label} style={{ '--plot': `${plot}px` }}>
       <div className="plot">
-        <div className={ticks.length === 1 ? 'grid solo' : 'grid'} aria-hidden="true">
-          {ticks.map((tick) => (
-            <div key={tick} className={tick === 0 ? 'gridline axis' : 'gridline'}>
-              <span>{tick}</span>
-            </div>
-          ))}
-        </div>
         <div className="cols">
           {week.map((day, index) => {
             const parts = [
@@ -1241,7 +1444,7 @@ function WeekChart({ week, today }) {
             return (
               <div key={day.day} className={day.day === today ? 'col today' : 'col'}>
                 <span className="count">{totals[index] || ''}</span>
-                <div className="bars">
+                <div className="well">
                   <div className="bar stack" style={{ height: height(totals[index]) }}>
                     {parts.map(([kind, count]) => (
                       <span key={kind} className={`seg ${kind}`} style={{ flexGrow: count }} />
@@ -1267,13 +1470,6 @@ function scaleTop(max) {
   const n = max / pow;
   const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
   return step * pow;
-}
-
-function ticksFor(top) {
-  if (top <= 1) return [1, 0];
-  if (top <= 4) return Array.from({ length: top + 1 }, (_, index) => top - index);
-  const mid = top / 2;
-  return Number.isInteger(mid) ? [top, mid, 0] : [top, 0];
 }
 
 function standingFor(board, today) {
@@ -1697,6 +1893,8 @@ function signature(board) {
     habits: board.habits,
     checks: board.checks,
     tombstones: board.tombstones,
+    notifyAt: board.notifyAt,
+    notifyOn: board.notifyOn,
   });
 }
 

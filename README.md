@@ -18,7 +18,7 @@
 
 | | |
 |---|---|
-| **Add** | Type a task and tap Add. Daymark then asks when it is due (No date limit, Today, Tomorrow, or a day you pick), whether to remind you, and its priority. |
+| **Add** | Tap the + button. Choose Task or Habit. A task then asks when it is due (No date limit, Today, Tomorrow, or a day you pick), whether to remind you, and its priority. A habit asks for its name. |
 | **Check** | Tap the box to finish a task. Tap it again to bring it back. Checking a task finishes its steps. |
 | **Edit** | Tap Edit on a task, or its title, to change its name, when it is due, the reminder and its time, or its priority. A step only has a name to change. |
 | **Due** | Open tasks split into Overdue, Today, Later, and No date limit. Overdue and later tasks show their day under the title. |
@@ -27,8 +27,10 @@
 | **Steps** | Add a step under a task when it is more than one action. |
 | **Reorder** | Drag the grip on a task to move it among tasks with the same day and priority. |
 | **Delete** | Each task has its own delete button. Undo sits at the bottom for a few seconds. |
+| **Habits** | Each habit shows a streak and its last 7 days. Tap one to choose its days, see a 5-week calendar, mark past days, or delete it. |
 | **Remind** | Turn on Remind me for a task with a day and pick a time. It starts at 9 AM, or the next hour if 9 AM has already passed today. With the Vercel setup below, the reminder arrives at that time even when Daymark is closed. Without it, the reminder only shows while Daymark is open. On iPhone, notifications only work after Daymark is added to the Home Screen. |
-| **Habits** | Add things you do regularly, like "Drink water", and check them off each day. Today shows two bars: habits checked, and tasks finished against what's still due. Each habit shows a streak and its last 7 days. Tap one to choose its days, see a 5-week calendar, mark past days, or delete it. Below the habits, Daymark lists tasks still due today or overdue so they can be finished from there. |
+| **Daily note** | Tap the bell and pick a time. Daymark sends one notification then, naming the habits and tasks still open that day. It arrives while Daymark is open. With the closed-app setup below, it can also arrive at that time when Daymark is closed. |
+| **Home** | The home screen lists your habits and your tasks. Anything still open today sits in a small row at the top, so you can check it off without opening a big card. |
 | **Activity** | Switch to Activity to log things you did that aren't tasks, like "Gym 1 hour". Today opens with bars for habits checked and tasks finished. Under that, each of the last 7 days is one column: the number on top is the total, and the column stacks tasks finished on time, tasks finished late, habits checked, and things you logged. Below the chart, each day lists what you logged, the habits you checked, the tasks you added, and the tasks you finished. |
 | **Theme** | Tap the moon beside the title for a dark theme, or the sun to come back to light. Daymark remembers the choice on this device. |
 | **Install** | Add it to your home screen. It opens like an app, with its own icon. |

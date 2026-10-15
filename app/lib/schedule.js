@@ -1,4 +1,4 @@
-import { reminderInstant, reminderKey } from './board.js';
+import { cleanTime, nextDigestAt, reminderInstant, reminderKey } from './board.js';
 import { readJson, writeJson } from './boardStore.js';
 
 const QSTASH_MAX_DELAY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -38,6 +38,20 @@ export async function scheduleWakeUps(board, origin, fallbackZone) {
       for (const [id, key] of tasks) keep[id] = key;
     } catch (err) {
       console.error('Daymark could not schedule a reminder', err.message);
+    }
+  }
+  const digestAt = cleanTime(board.notifyAt);
+  if (digestAt && fallbackZone) {
+    const at = nextDigestAt(digestAt, fallbackZone, now);
+    const key = at ? `digest ${digestAt} ${at}` : '';
+    if (key && booked.digest === key) keep.digest = key;
+    else if (key && at - now <= QSTASH_MAX_DELAY_MS) {
+      try {
+        await wakeAt(origin, at);
+        keep.digest = key;
+      } catch (err) {
+        console.error('Daymark could not schedule the daily notification', err.message);
+      }
     }
   }
   if (JSON.stringify(keep) !== JSON.stringify(booked)) await writeJson('scheduled', keep);

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import {
+  dailyDigest,
   dayInZone,
+  digestDue,
+  markDigest,
   mergeBoards,
   normalizeBoard,
   reminderInstant,
@@ -35,6 +38,7 @@ async function run(request) {
   const now = Date.now() + EARLY_MS;
   const reminded = new Map();
   let sent = 0;
+  let digestDay = null;
 
   if (devices.length > 0) {
     const keys = await vapidKeys();
@@ -42,12 +46,20 @@ async function run(request) {
       const zone = device.timeZone;
       const today = dayInZone(zone);
       const due = exact ? remindersDue(board, now, zone) : remindersForDay(board, today);
-      if (due.length === 0) continue;
+      const digest = digestDue(board, new Date(now), zone) ? dailyDigest(board, today) : null;
+      if (digestDue(board, new Date(now), zone)) digestDay = today;
+      if (due.length === 0 && !digest) continue;
       try {
-        await sendReminder(keys, device, reminderMessage(due, today));
-        sent += 1;
-        for (const task of due) {
-          if (reminderInstant(task, zone) <= now) reminded.set(task.id, reminderKey(task));
+        if (due.length > 0) {
+          await sendReminder(keys, device, reminderMessage(due, today));
+          sent += 1;
+          for (const task of due) {
+            if (reminderInstant(task, zone) <= now) reminded.set(task.id, reminderKey(task));
+          }
+        }
+        if (digest) {
+          await sendReminder(keys, device, digest);
+          sent += 1;
         }
       } catch (err) {
         if (err.statusCode === 404 || err.statusCode === 410) await removeDevice(device.endpoint);
@@ -57,9 +69,10 @@ async function run(request) {
   }
 
   let latest = board;
-  if (reminded.size > 0) {
+  if (reminded.size > 0 || digestDay) {
     let next = board;
     for (const [id, key] of reminded) next = updateTask(next, id, { remindedOn: key });
+    if (digestDay) next = markDigest(next, digestDay);
     const stored = await readBoard();
     latest = stored ? mergeBoards(stored, next) : next;
     await writeBoard(latest);
