@@ -403,46 +403,6 @@ h2 {
 .home { padding-bottom: calc(var(--dock) + 5.4rem); }
 .home.has-undo { padding-bottom: calc(var(--dock) + 9.4rem); }
 
-.pending {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0.9rem 0 0.15rem;
-}
-
-.pending-label {
-  margin-right: 0.1rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: 100%;
-  min-height: 32px;
-  padding: 0.1rem 0.65rem 0.1rem 0.4rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  font-size: 0.82rem;
-  font-weight: 650;
-}
-
-.pillbox {
-  width: 0.8rem;
-  height: 0.8rem;
-  flex: none;
-  border: 1.5px solid var(--box-border);
-  border-radius: 4px;
-  background: var(--box-fill);
-}
-
 .tasks.compact .check { padding-top: 0.4rem; padding-bottom: 0.4rem; }
 .tasks.compact .body { padding: 0.3rem 0; }
 .tasks.compact .dots { gap: 3px; }

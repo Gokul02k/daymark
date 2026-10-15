@@ -717,12 +717,6 @@ export default function HomePage() {
         />
       ) : (
         <>
-      <PendingStrip
-        board={state}
-        today={today}
-        onToggleHabit={onToggleHabit}
-        onFinishTask={(id) => apply(setDone(state, id, true))}
-      />
       <div className="lists">
         {state.lists.map((list) => (
           <button
@@ -1174,29 +1168,6 @@ function HabitSheet({ board, draft, today, onChange, onToggleDay, onSave, onDele
           </span>
         </div>
       </form>
-    </div>
-  );
-}
-
-function PendingStrip({ board, today, onToggleHabit, onFinishTask }) {
-  const plan = todayPlan(board, today);
-  const habits = plan.habits.filter((habit) => habitScheduled(habit, today) && !habitChecked(board, habit.id, today));
-  if (habits.length + plan.tasks.length === 0) return null;
-  return (
-    <div className="pending">
-      <span className="pending-label">Today</span>
-      {habits.map((habit) => (
-        <button key={habit.id} type="button" className="pill" onClick={() => onToggleHabit(habit.id, today, true)}>
-          <span className="pillbox" aria-hidden="true" />
-          {habit.name}
-        </button>
-      ))}
-      {plan.tasks.map((task) => (
-        <button key={task.id} type="button" className="pill" onClick={() => onFinishTask(task.id)}>
-          <span className="pillbox" aria-hidden="true" />
-          {task.title}
-        </button>
-      ))}
     </div>
   );
 }
