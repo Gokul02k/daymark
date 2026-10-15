@@ -34,6 +34,31 @@ export function cleanTime(value) {
   return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
 }
 
+function cleanTimes(value, legacy) {
+  const times = [];
+  const add = (item) => {
+    const time = cleanTime(item);
+    if (time && !times.includes(time)) times.push(time);
+  };
+  if (Array.isArray(value)) value.forEach(add);
+  if (times.length === 0) add(legacy);
+  return times.sort();
+}
+
+function cleanSent(value, legacyDay, legacyTime) {
+  const sent = [];
+  const add = (item) => {
+    if (typeof item === 'string' && /^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d$/.test(item) && !sent.includes(item)) {
+      sent.push(item);
+    }
+  };
+  if (Array.isArray(value)) value.forEach(add);
+  const day = cleanDue(legacyDay);
+  const time = cleanTime(legacyTime);
+  if (day && time) add(`${day} ${time}`);
+  return sent.sort();
+}
+
 export function validZone(value) {
   if (typeof value !== 'string' || !value || value.length > 64) return null;
   try {
@@ -152,8 +177,8 @@ export function normalizeBoard(raw) {
     habits,
     checks,
     tombstones,
-    notifyAt: cleanTime(base.notifyAt) || null,
-    notifyOn: cleanDue(base.notifyOn) || null,
+    notifyTimes: cleanTimes(base.notifyTimes, base.notifyAt),
+    notifySent: cleanSent(base.notifySent, base.notifyOn, base.notifyAt),
     updatedAt: base.updatedAt || new Date(0).toISOString(),
   };
 }
@@ -454,8 +479,8 @@ export function mergeBoards(left, right) {
     habits,
     checks,
     tombstones: tombstones.filter((tomb) => !live.has(tomb.id)),
-    notifyAt: cleanTime(newer.notifyAt) || null,
-    notifyOn: cleanDue(newer.notifyOn) || null,
+    notifyTimes: newer.notifyTimes || [],
+    notifySent: newer.notifySent || [],
     updatedAt: a.updatedAt > b.updatedAt ? a.updatedAt : b.updatedAt,
   };
 }
@@ -535,16 +560,16 @@ export function clockInZone(timeZone, date = new Date()) {
   }
 }
 
-/** True once the chosen clock time has arrived today and the daily note has not been sent. */
-export function digestDue(board, now = new Date(), zone) {
-  const time = cleanTime(board?.notifyAt);
-  if (!time) return false;
+/** Reminder times for today that have arrived and have not been sent yet. */
+export function dueDigestTimes(board, now = new Date(), zone) {
+  const times = board?.notifyTimes || [];
+  if (times.length === 0) return [];
   const today = zone ? dayInZone(zone, now) : todayKey(now);
-  if (board.notifyOn === today) return false;
   const clock = zone
     ? clockInZone(zone, now)
     : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  return clock >= time;
+  const sent = new Set(board.notifySent || []);
+  return times.filter((time) => clock >= time && !sent.has(`${today} ${time}`));
 }
 
 /** Habits still open today, plus tasks still due, for the daily notification. */
@@ -559,19 +584,36 @@ export function dailyDigest(board, today = todayKey()) {
   return { title: 'Daymark', body, tag: 'daymark-daily' };
 }
 
-export function markDigest(board, today) {
-  if (board.notifyOn === today) return board;
-  return touch({ ...board, notifyOn: today });
+export function markDigest(board, today, times) {
+  const sent = new Set(board.notifySent || []);
+  let changed = false;
+  for (const time of Array.isArray(times) ? times : [times]) {
+    const key = `${today} ${time}`;
+    if (!sent.has(key)) {
+      sent.add(key);
+      changed = true;
+    }
+  }
+  if (!changed) return board;
+  return touch({ ...board, notifySent: [...sent].sort() });
 }
 
-/** The next time `HH:MM` occurs in `zone`. */
-export function nextDigestAt(notifyAt, zone, now = Date.now()) {
-  const time = cleanTime(notifyAt);
-  if (!time || !zone) return null;
+/** The soonest reminder still ahead, across every saved time. */
+export function nextDigestAt(times, zone, now = Date.now(), sent = []) {
+  const list = (Array.isArray(times) ? times : [times]).map((item) => cleanTime(item)).filter(Boolean);
+  if (list.length === 0 || !zone) return null;
   const today = dayInZone(zone, new Date(now));
-  const todayAt = reminderInstant({ dueAt: today, remindAt: time, remindTz: zone }, zone);
-  if (todayAt > now) return todayAt;
-  return reminderInstant({ dueAt: shiftDay(today, 1), remindAt: time, remindTz: zone }, zone);
+  const already = new Set(sent);
+  let soonest = null;
+  for (const time of list) {
+    const todayAt = reminderInstant({ dueAt: today, remindAt: time, remindTz: zone }, zone);
+    const at =
+      todayAt > now && !already.has(`${today} ${time}`)
+        ? todayAt
+        : reminderInstant({ dueAt: shiftDay(today, 1), remindAt: time, remindTz: zone }, zone);
+    if (soonest === null || at < soonest) soonest = at;
+  }
+  return soonest;
 }
 
 export function dayInZone(timeZone, date = new Date()) {

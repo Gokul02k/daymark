@@ -176,6 +176,9 @@ main {
 .logo svg { display: block; width: 100%; height: 100%; }
 
 h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   margin: 0;
   font-family: Georgia, "Iowan Old Style", Palatino, "Palatino Linotype", serif;
   font-size: 1.85rem;
@@ -183,6 +186,15 @@ h1 {
   letter-spacing: -0.03em;
   line-height: 1;
 }
+
+.synctick {
+  display: inline-flex;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: #3b82f6;
+}
+
+.synctick svg { display: block; width: 100%; height: 100%; }
 
 h2 {
   margin: 1.35rem 0 0.45rem;
@@ -351,19 +363,6 @@ h2 {
 
 .hint.tight { margin: 0.35rem 0 0; }
 
-.status {
-  display: inline-flex;
-  margin: 0.85rem 0 0;
-  padding: 0.18rem 0.6rem;
-  border-radius: 999px;
-  background: var(--bg-2);
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
-.status.up { background: var(--ok-soft); color: var(--ok); }
-
 .unlock { display: flex; gap: 0.5rem; margin: 0.65rem 0 0; }
 
 .unlock input {
@@ -403,10 +402,57 @@ h2 {
 .home { padding-bottom: calc(var(--dock) + 5.4rem); }
 .home.has-undo { padding-bottom: calc(var(--dock) + 9.4rem); }
 
-.tasks.compact .check { padding-top: 0.4rem; padding-bottom: 0.4rem; }
-.tasks.compact .body { padding: 0.3rem 0; }
-.tasks.compact .dots { gap: 3px; }
-.tasks.compact .dot { width: 7px; height: 7px; }
+.habitstrip {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  margin: 0.85rem 0 0.15rem;
+  padding-bottom: 0.2rem;
+}
+
+.habittab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 14rem;
+  min-height: 36px;
+  padding: 0.1rem 0.65rem 0.1rem 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.habittab.due { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.habittab.done { opacity: 0.62; }
+
+.habittab .check { padding: 0.25rem; min-height: 0; }
+.habittab .box { width: 1.05rem; height: 1.05rem; margin: 0; border-radius: 50%; }
+
+.habname {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.habname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.habstreak {
+  flex: none;
+  min-width: 1.1rem;
+  padding: 0.05rem 0.32rem;
+  border-radius: 999px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
 
 .dock {
   position: fixed;

@@ -15,7 +15,7 @@ import {
   dailyDigest,
   dayActivity,
   defaultRemindAt,
-  digestDue,
+  dueDigestTimes,
   deleteEntry,
   deleteHabit,
   deleteList,
@@ -82,14 +82,6 @@ const PRIORITY_CHOICES = [
 
 const PRIORITY_MARK = { low: '!', medium: '!!', high: '!!!' };
 
-const STATUS_TEXT = {
-  synced: 'Synced',
-  device: 'On this device',
-  locked: 'Enter your 4-digit passcode to sync',
-  throttled: 'Too many wrong passcodes. Try again in 15 minutes.',
-  unset: 'On this device. Set a 4-digit DAYMARK_PASSCODE in Vercel to sync.',
-};
-
 const POLL_MS = 15 * 1000;
 
 export default function HomePage() {
@@ -101,7 +93,7 @@ export default function HomePage() {
   const [habitText, setHabitText] = useState('');
   const [composer, setComposer] = useState(null);
   const [notifyOpen, setNotifyOpen] = useState(false);
-  const [notifyTime, setNotifyTime] = useState('09:00');
+  const [notifyTimes, setNotifyTimes] = useState(['09:00']);
   const [habitSheet, setHabitSheet] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [syncMode, setSyncMode] = useState('device');
@@ -175,10 +167,11 @@ export default function HomePage() {
       notify(reminderMessage(due, today));
       for (const task of due) next = updateTask(next, task.id, { remindedOn: reminderKey(task) });
     }
-    if (digestDue(next, new Date(), zone)) {
+    const dueTimes = dueDigestTimes(next, new Date(), zone);
+    if (dueTimes.length > 0) {
       const digest = dailyDigest(next, today);
       if (digest) notify(digest);
-      next = markDigest(next, today);
+      next = markDigest(next, today, dueTimes);
     }
     if (next !== board) apply(next);
   }
@@ -440,22 +433,28 @@ export default function HomePage() {
       kind: 'none',
       date: '',
       remind: false,
-      remindAt: state.notifyAt || DEFAULT_REMIND_AT,
+      remindAt: state.notifyTimes?.[0] || DEFAULT_REMIND_AT,
       priority: 'none',
     });
   }
 
   function openNotify() {
-    setNotifyTime(state.notifyAt || '09:00');
+    setNotifyTimes(state.notifyTimes?.length ? state.notifyTimes : ['09:00']);
     setRemindHint('');
     setNotifyOpen(true);
   }
 
+  function changeNotifyTime(index, value) {
+    setNotifyTimes((current) => current.map((time, item) => (item === index ? value : time)));
+  }
+
   async function saveNotify(event) {
     event.preventDefault();
+    const times = [...new Set(notifyTimes.filter((time) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))].sort();
+    if (times.length === 0) return;
     if (!(await allowReminders())) return;
-    const same = state.notifyAt === notifyTime;
-    apply({ ...state, notifyAt: notifyTime, notifyOn: same ? state.notifyOn : null });
+    const same = times.join() === (state.notifyTimes || []).join();
+    apply({ ...state, notifyTimes: times, notifySent: same ? state.notifySent : [] });
     setNotifyOpen(false);
   }
 
@@ -623,6 +622,8 @@ export default function HomePage() {
       ),
     );
 
+  const { attention, rest: restGroups } = splitAttention(groups, today);
+
   function show(tasks) {
     if (!dragOrder || !tasks.every((task) => dragOrder.includes(task.id))) return tasks;
     const rank = new Map(dragOrder.map((id, index) => [id, index]));
@@ -647,7 +648,23 @@ export default function HomePage() {
             </svg>
           </span>
           <div>
-            <h1>Daymark</h1>
+            <h1>
+              Daymark
+              {syncMode === 'synced' ? (
+                <span className="synctick" aria-label="Synced">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M3.2 8.2l3 3.1 6.6-7"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              ) : null}
+            </h1>
             <p className="lede">
               {openCount === 0 ? 'Nothing open' : `${openCount} open`}
               {groups.overdue.length > 0 ? ` · ${groups.overdue.length} overdue` : ''}
@@ -657,8 +674,12 @@ export default function HomePage() {
         <div className="top-actions">
           <button
             type="button"
-            className={state.notifyAt ? 'themebtn armed' : 'themebtn'}
-            aria-label={state.notifyAt ? `Notifications at ${clockLabel(state.notifyAt)}` : 'Set notification time'}
+            className={state.notifyTimes?.length ? 'themebtn armed' : 'themebtn'}
+            aria-label={
+              state.notifyTimes?.length
+                ? `Notifications at ${state.notifyTimes.map((time) => clockLabel(time)).join(', ')}`
+                : 'Set notification times'
+            }
             onClick={openNotify}
           >
             <BellIcon />
@@ -679,7 +700,6 @@ export default function HomePage() {
           ) : null}
         </div>
       </header>
-      <p className={syncMode === 'synced' ? 'status up' : 'status'}>{STATUS_TEXT[syncMode]}</p>
       {syncMode === 'locked' ? (
         <form
           className="unlock"
@@ -753,39 +773,68 @@ export default function HomePage() {
       ) : null}
 
       {planToday.habits.length > 0 ? (
-        <section>
-          <h2>Habits</h2>
-          <ul className="tasks compact">
-            {planToday.habits.map((habit) => (
-              <HabitRow
-                key={habit.id}
-                board={state}
-                habit={habit}
-                today={today}
-                week={Array.from({ length: 7 }, (_, index) => shiftDay(today, index - 6))}
-                onToggle={onToggleHabit}
-                onOpen={openHabit}
-              />
-            ))}
-          </ul>
-        </section>
+        <div className="habitstrip" aria-label="Habits">
+          {planToday.habits.map((habit) => (
+            <HabitChip
+              key={habit.id}
+              board={state}
+              habit={habit}
+              today={today}
+              onToggle={onToggleHabit}
+              onOpen={openHabit}
+            />
+          ))}
+        </div>
       ) : null}
 
       {listEmpty && planToday.habits.length === 0 ? (
         <p className="hint empty">Tap + to add a task or a habit.</p>
       ) : null}
 
+      {attention.length > 0 ? (
+        <section>
+          <h2>Up next</h2>
+          <ul className="tasks">
+            {show(attention).map((task) => (
+              <TaskBlock
+                key={task.id}
+                task={task}
+                today={today}
+                siblings={attention}
+                state={state}
+                stepFor={stepFor}
+                stepTitle={stepTitle}
+                dragOrder={dragOrder}
+                onToggle={() => apply(setDone(state, task.id, !task.done))}
+                onDelete={() => onDeleteTask(task.id)}
+                onEdit={() => startEdit(task)}
+                onDrag={startDrag}
+                onStepStart={() => {
+                  setStepFor(task.id);
+                  setStepTitle('');
+                }}
+                onStepTitle={setStepTitle}
+                onStep={onStep}
+                onChildToggle={(id, doneFlag) => apply(setDone(state, id, doneFlag))}
+                onChildDelete={onDeleteTask}
+                onChildEdit={startEdit}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {GROUPS.map(([key, label]) =>
-        groups[key].length === 0 ? null : (
+        restGroups[key].length === 0 ? null : (
           <section key={key}>
             <h2>{label}</h2>
             <ul className="tasks">
-              {show(groups[key]).map((task) => (
+              {show(restGroups[key]).map((task) => (
                 <TaskBlock
                   key={task.id}
                   task={task}
                   today={today}
-                  siblings={groups[key]}
+                  siblings={restGroups[key]}
                   state={state}
                   stepFor={stepFor}
                   stepTitle={stepTitle}
@@ -894,14 +943,16 @@ export default function HomePage() {
 
       {notifyOpen ? (
         <NotifySheet
-          time={notifyTime}
-          enabled={Boolean(state.notifyAt)}
+          times={notifyTimes}
+          enabled={Boolean(state.notifyTimes?.length)}
           hint={remindHint}
           pushState={pushState}
-          onTime={setNotifyTime}
+          onTime={changeNotifyTime}
+          onAdd={() => setNotifyTimes((current) => (current.length >= 6 ? current : [...current, '18:00']))}
+          onRemove={(index) => setNotifyTimes((current) => current.filter((_, item) => item !== index))}
           onSubmit={saveNotify}
           onClear={() => {
-            apply({ ...state, notifyAt: null, notifyOn: null });
+            apply({ ...state, notifyTimes: [], notifySent: [] });
             setNotifyOpen(false);
           }}
           onClose={() => setNotifyOpen(false)}
@@ -1019,6 +1070,50 @@ function HabitsView({ board, today, habitText, onHabitText, onAddHabit, onToggle
       ) : null}
     </>
   );
+}
+
+function HabitChip({ board, habit, today, onToggle, onOpen }) {
+  const scheduled = habitScheduled(habit, today);
+  const done = habitChecked(board, habit.id, today);
+  const { current } = habitStats(board, habit, today);
+  return (
+    <div className={done ? 'habittab done' : scheduled ? 'habittab due' : 'habittab'}>
+      <button
+        type="button"
+        className={done ? 'check checked' : 'check'}
+        aria-pressed={done}
+        aria-label={`${habit.name} today`}
+        onClick={() => onToggle(habit.id, today, !done)}
+      >
+        <span className="box round" aria-hidden="true" />
+      </button>
+      <button type="button" className="habname" onClick={() => onOpen(habit)}>
+        {habit.name}
+        {current > 0 ? <span className="habstreak">{current}</span> : null}
+      </button>
+    </div>
+  );
+}
+
+function splitAttention(groups, today) {
+  const soon = shiftDay(today, 1);
+  const rank = { none: 0, low: 1, medium: 2, high: 3 };
+  const attention = [];
+  const rest = { overdue: [], today: [], later: [], none: [] };
+  for (const key of ['overdue', 'today', 'later', 'none']) {
+    for (const task of groups[key]) {
+      const priority = task.priority && task.priority !== 'none';
+      const close = Boolean(task.dueAt) && task.dueAt <= soon;
+      if (priority || close) attention.push(task);
+      else rest[key].push(task);
+    }
+  }
+  attention.sort(
+    (a, b) =>
+      (a.dueAt || '9999-99-99').localeCompare(b.dueAt || '9999-99-99') ||
+      rank[b.priority] - rank[a.priority],
+  );
+  return { attention, rest };
 }
 
 function HabitRow({ board, habit, today, week, onToggle, onOpen }) {
@@ -1217,7 +1312,7 @@ function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onSubmitHab
   );
 }
 
-function NotifySheet({ time, enabled, hint, pushState, onTime, onSubmit, onClear, onClose }) {
+function NotifySheet({ times, enabled, hint, pushState, onTime, onAdd, onRemove, onSubmit, onClear, onClose }) {
   return (
     <div
       className="backdrop"
@@ -1225,20 +1320,34 @@ function NotifySheet({ time, enabled, hint, pushState, onTime, onSubmit, onClear
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <form className="sheet" role="dialog" aria-modal="true" aria-label="Notification time" onSubmit={onSubmit}>
-        <p className="sheet-title">Daily notification</p>
+      <form className="sheet" role="dialog" aria-modal="true" aria-label="Notification times" onSubmit={onSubmit}>
+        <p className="sheet-title">Daily notifications</p>
         <p className="note">
-          Daymark sends one note at this time about habits and tasks still open today.
+          Daymark sends a note at each time about habits and tasks still open today.
           {pushState === 'exact' ? ' It arrives even when Daymark is closed.' : ' It arrives while Daymark is open.'}
         </p>
-        <input
-          className="field timefield"
-          type="time"
-          value={time}
-          aria-label="Notification time"
-          onChange={(event) => onTime(event.target.value)}
-          required
-        />
+        {times.map((time, index) => (
+          <div className="remindrow" key={index}>
+            <input
+              className="field timefield"
+              type="time"
+              value={time}
+              aria-label={`Reminder ${index + 1}`}
+              onChange={(event) => onTime(index, event.target.value)}
+              required
+            />
+            {times.length > 1 ? (
+              <button type="button" className="textbtn" onClick={() => onRemove(index)}>
+                Remove
+              </button>
+            ) : null}
+          </div>
+        ))}
+        {times.length < 6 ? (
+          <button type="button" className="textbtn" onClick={onAdd}>
+            Add another time
+          </button>
+        ) : null}
         {hint ? <p className="hint tight">{hint}</p> : null}
         <div className="sheet-actions spread">
           {enabled ? (
@@ -1864,8 +1973,8 @@ function signature(board) {
     habits: board.habits,
     checks: board.checks,
     tombstones: board.tombstones,
-    notifyAt: board.notifyAt,
-    notifyOn: board.notifyOn,
+    notifyTimes: board.notifyTimes,
+    notifySent: board.notifySent,
   });
 }
 

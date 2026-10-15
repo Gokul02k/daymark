@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   dailyDigest,
   dayInZone,
-  digestDue,
+  dueDigestTimes,
   markDigest,
   mergeBoards,
   normalizeBoard,
@@ -38,7 +38,7 @@ async function run(request) {
   const now = Date.now() + EARLY_MS;
   const reminded = new Map();
   let sent = 0;
-  let digestDay = null;
+  let digestMark = null;
 
   if (devices.length > 0) {
     const keys = await vapidKeys();
@@ -46,8 +46,9 @@ async function run(request) {
       const zone = device.timeZone;
       const today = dayInZone(zone);
       const due = exact ? remindersDue(board, now, zone) : remindersForDay(board, today);
-      const digest = digestDue(board, new Date(now), zone) ? dailyDigest(board, today) : null;
-      if (digestDue(board, new Date(now), zone)) digestDay = today;
+      const dueTimes = dueDigestTimes(board, new Date(now), zone);
+      const digest = dueTimes.length > 0 ? dailyDigest(board, today) : null;
+      if (dueTimes.length > 0) digestMark = { today, times: dueTimes };
       if (due.length === 0 && !digest) continue;
       try {
         if (due.length > 0) {
@@ -69,10 +70,10 @@ async function run(request) {
   }
 
   let latest = board;
-  if (reminded.size > 0 || digestDay) {
+  if (reminded.size > 0 || digestMark) {
     let next = board;
     for (const [id, key] of reminded) next = updateTask(next, id, { remindedOn: key });
-    if (digestDay) next = markDigest(next, digestDay);
+    if (digestMark) next = markDigest(next, digestMark.today, digestMark.times);
     const stored = await readBoard();
     latest = stored ? mergeBoards(stored, next) : next;
     await writeBoard(latest);

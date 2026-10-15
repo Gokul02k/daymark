@@ -20,7 +20,7 @@ import {
   dayInZone,
   dailyDigest,
   defaultRemindAt,
-  digestDue,
+  dueDigestTimes,
   markDigest,
   deleteTask,
   dueChoice,
@@ -298,19 +298,22 @@ test('two devices keep a new task and a deletion', () => {
   assert.equal(merged.tasks.some((task) => task.title === 'Shared'), false);
 });
 
-test('a daily notification waits for its time, then names what is still open', () => {
-  let board = { ...emptyBoard(), notifyAt: '09:00' };
+test('each saved time can send its own daily note', () => {
+  let board = normalizeBoard({ notifyAt: '09:00', notifyOn: '2026-10-14' });
+  assert.deepEqual(board.notifyTimes, ['09:00']);
+  assert.deepEqual(board.notifySent, ['2026-10-14 09:00']);
+  board = { ...board, notifyTimes: ['09:00', '18:00'], notifySent: [] };
   board = addHabit(board, 'Drink water');
   board = addTask(board, { title: 'Call the dentist', dueAt: '2026-10-15' });
   const morning = new Date(2026, 9, 15, 8, 59);
-  const due = new Date(2026, 9, 15, 9, 0);
-  assert.equal(digestDue(board, morning), false);
-  assert.equal(digestDue(board, due), true);
+  const nine = new Date(2026, 9, 15, 9, 0);
+  const evening = new Date(2026, 9, 15, 18, 0);
+  assert.deepEqual(dueDigestTimes(board, morning), []);
+  assert.deepEqual(dueDigestTimes(board, nine), ['09:00']);
+  board = markDigest(board, '2026-10-15', ['09:00']);
+  assert.deepEqual(dueDigestTimes(board, nine), []);
+  assert.deepEqual(dueDigestTimes(board, evening), ['18:00']);
   assert.match(dailyDigest(board, '2026-10-15').body, /Drink water/);
-  assert.match(dailyDigest(board, '2026-10-15').body, /Call the dentist/);
-  board = markDigest(board, '2026-10-15');
-  assert.equal(digestDue(board, due), false);
   const kept = mergeBoards({ ...emptyBoard(), updatedAt: '2026-10-01T00:00:00.000Z' }, board);
-  assert.equal(kept.notifyAt, '09:00');
-  assert.equal(normalizeBoard({ notifyAt: '25:00' }).notifyAt, null);
+  assert.deepEqual(kept.notifyTimes, ['09:00', '18:00']);
 });
