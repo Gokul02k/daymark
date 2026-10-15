@@ -32,6 +32,7 @@
 | **Daily notes** | Tap the bell and pick one or more times. Daymark sends a notification at each time, naming the habits and tasks still open that day. It arrives while Daymark is open. With the closed-app setup below, it can also arrive at those times when Daymark is closed. |
 | **Home** | Habits sit in one compact card, a line each, with the streak and the last 7 days as dots. Priority tasks, and tasks due today or tomorrow, come next so they stay in view. The rest of the list follows. |
 | **Activity** | Switch to Activity to log things you did that aren't tasks, like "Gym 1 hour". Today opens with bars for habits checked and tasks finished. Under that, each of the last 7 days is one column: the number on top is the total, and the column stacks tasks finished on time, tasks finished late, habits checked, and things you logged. Below the chart, each day lists what you logged, the habits you checked, the tasks you added, and the tasks you finished. |
+| **Robot** | The little robot at the top smiles when you finish things on time, beams when today's habits are done and nothing due is left, and looks sad while a task is overdue. It reacts when you add, edit, check, or delete a task, a step, a habit, or a list. Tap it to play, tap it fast to make it dizzy, or drag it around and let go. |
 | **Theme** | Tap the moon beside the title for a dark theme, or the sun to come back to light. Daymark remembers the choice on this device. |
 | **Install** | Add it to your home screen. It opens like an app, with its own icon. |
 

@@ -58,6 +58,7 @@ import {
   savePersisted,
   saveSelectedList,
 } from './lib/storage';
+import Robot from './robot';
 
 const GROUPS = [
   ['overdue', 'Overdue'],
@@ -92,6 +93,7 @@ export default function HomePage() {
   const [logText, setLogText] = useState('');
   const [habitText, setHabitText] = useState('');
   const [composer, setComposer] = useState(null);
+  const [robotCue, setRobotCue] = useState(null);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [notifyTimes, setNotifyTimes] = useState(['09:00']);
   const [habitSheet, setHabitSheet] = useState(null);
@@ -310,6 +312,29 @@ export default function HomePage() {
     saveSelectedList(id);
   }
 
+  function cue(type) {
+    setRobotCue({ type, at: Date.now() + Math.random() });
+  }
+
+  function toggleTask(id, done) {
+    const task = state.tasks.find((item) => item.id === id);
+    if (!task) return;
+    const today = todayKey();
+    const next = setDone(state, id, done);
+    apply(next);
+    if (!done) {
+      cue('undo');
+      return;
+    }
+    if (task.parentId) {
+      cue('step');
+      return;
+    }
+    const dueLeft = (board) => board.tasks.filter((item) => !item.parentId && !item.done && item.dueAt && item.dueAt <= today).length;
+    if (dueLeft(state) > 0 && dueLeft(next) === 0) cue('clear');
+    else cue(task.dueAt && task.dueAt < today ? 'late' : 'done');
+  }
+
   function offerUndo(entry) {
     setUndo(entry);
     clearTimeout(undoTimer.current);
@@ -367,6 +392,7 @@ export default function HomePage() {
     else next = updateTask(state, sheet.editId, sheet.child ? { title: sheet.title } : fields);
     if (next === state) return;
     apply(next);
+    cue(sheet.editId ? 'edit' : 'add');
     if (!sheet.editId) setTitle('');
     setSheet(null);
   }
@@ -377,7 +403,10 @@ export default function HomePage() {
     if (!name) return;
     const next = addList(state, name);
     const created = next.lists.find((list) => list.name.toLowerCase() === name.toLowerCase());
-    if (next !== state) apply(next);
+    if (next !== state) {
+      apply(next);
+      cue('list');
+    }
     if (created) chooseList(created.id);
     setListName('');
     setComposer(null);
@@ -389,6 +418,7 @@ export default function HomePage() {
     apply(result.board);
     if (id === listId) chooseList('inbox');
     setComposer(null);
+    cue('bye');
     offerUndo({ label: result.removed.list.name, listRemoval: result.removed });
   }
 
@@ -401,6 +431,7 @@ export default function HomePage() {
     const result = deleteTask(state, id);
     if (result.removed.length === 0) return;
     apply(result.board);
+    cue('bye');
     offerUndo({ label: result.removed[0].title, tasks: result.removed });
   }
 
@@ -412,6 +443,7 @@ export default function HomePage() {
     else if (undo.habit) next = restoreHabit(state, undo.habit);
     else next = restoreList(state, undo.listRemoval);
     apply(next);
+    cue('restore');
     setUndo(null);
   }
 
@@ -420,6 +452,7 @@ export default function HomePage() {
     const next = addEntry(state, logText);
     if (next === state) return;
     apply(next);
+    cue('log');
     setLogText('');
   }
 
@@ -428,6 +461,7 @@ export default function HomePage() {
     const next = addHabit(state, habitText);
     if (next === state) return;
     apply(next);
+    cue('newhabit');
     setHabitText('');
     setComposer(null);
   }
@@ -463,11 +497,21 @@ export default function HomePage() {
     if (!(await allowReminders())) return;
     const same = times.join() === (state.notifyTimes || []).join();
     apply({ ...state, notifyTimes: times, notifySent: same ? state.notifySent : [] });
+    cue('remind');
     setNotifyOpen(false);
   }
 
   function onToggleHabit(habitId, day, done) {
-    apply(checkHabit(state, habitId, day, done));
+    const next = checkHabit(state, habitId, day, done);
+    if (next === state) return;
+    apply(next);
+    if (!done) {
+      cue('undo');
+      return;
+    }
+    const today = todayKey();
+    const plan = todayPlan(next, today);
+    cue(day === today && plan.scheduled > 0 && plan.done >= plan.scheduled ? 'allhabits' : 'habit');
   }
 
   function openHabit(habit) {
@@ -481,6 +525,7 @@ export default function HomePage() {
     const next = updateHabit(state, habitSheet.id, { name: habitSheet.name, days: habitSheet.days });
     if (next === state) return;
     apply(next);
+    cue('edit');
     setHabitSheet(null);
   }
 
@@ -489,6 +534,7 @@ export default function HomePage() {
     if (!result.removed) return;
     apply(result.board);
     setHabitSheet(null);
+    cue('bye');
     offerUndo({ label: result.removed.habit.name, habit: result.removed });
   }
 
@@ -496,6 +542,7 @@ export default function HomePage() {
     const result = deleteEntry(state, id);
     if (result.removed.length === 0) return;
     apply(result.board);
+    cue('bye');
     offerUndo({ label: result.removed[0].text, entries: result.removed });
   }
 
@@ -532,6 +579,7 @@ export default function HomePage() {
     const next = addTask(state, { title: stepTitle, parentId: stepFor });
     if (next === state) return;
     apply(next);
+    cue('add');
     setStepTitle('');
     setStepFor(null);
   }
@@ -643,19 +691,7 @@ export default function HomePage() {
     <main className={[view === 'activity' ? '' : 'home', undo ? 'has-undo' : ''].filter(Boolean).join(' ') || undefined}>
       <header className="top">
         <div className="brand">
-          <span className="logo" aria-hidden="true">
-            <svg viewBox="0 0 32 32">
-              <rect width="32" height="32" rx="9" fill="currentColor" />
-              <path
-                d="M9 16.5l4.2 4.2L23 11"
-                fill="none"
-                stroke="var(--mark)"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
+          <Robot mood={moodFor(state, today)} cue={robotCue} />
           <div>
             <h1>
               Daymark
@@ -819,7 +855,7 @@ export default function HomePage() {
                 stepFor={stepFor}
                 stepTitle={stepTitle}
                 dragOrder={dragOrder}
-                onToggle={() => apply(setDone(state, task.id, !task.done))}
+                onToggle={() => toggleTask(task.id, !task.done)}
                 onDelete={() => onDeleteTask(task.id)}
                 onEdit={() => startEdit(task)}
                 onDrag={startDrag}
@@ -829,7 +865,7 @@ export default function HomePage() {
                 }}
                 onStepTitle={setStepTitle}
                 onStep={onStep}
-                onChildToggle={(id, doneFlag) => apply(setDone(state, id, doneFlag))}
+                onChildToggle={(id, doneFlag) => toggleTask(id, doneFlag)}
                 onChildDelete={onDeleteTask}
                 onChildEdit={startEdit}
               />
@@ -853,7 +889,7 @@ export default function HomePage() {
                   stepFor={stepFor}
                   stepTitle={stepTitle}
                   dragOrder={dragOrder}
-                  onToggle={() => apply(setDone(state, task.id, !task.done))}
+                  onToggle={() => toggleTask(task.id, !task.done)}
                   onDelete={() => onDeleteTask(task.id)}
                   onEdit={() => startEdit(task)}
                   onDrag={startDrag}
@@ -863,7 +899,7 @@ export default function HomePage() {
                   }}
                   onStepTitle={setStepTitle}
                   onStep={onStep}
-                  onChildToggle={(id, doneFlag) => apply(setDone(state, id, doneFlag))}
+                  onChildToggle={(id, doneFlag) => toggleTask(id, doneFlag)}
                   onChildDelete={onDeleteTask}
                   onChildEdit={startEdit}
                 />
@@ -888,14 +924,14 @@ export default function HomePage() {
                 stepFor={stepFor}
                 stepTitle={stepTitle}
                 dragOrder={dragOrder}
-                onToggle={() => apply(setDone(state, task.id, false))}
+                onToggle={() => toggleTask(task.id, false)}
                 onDelete={() => onDeleteTask(task.id)}
                 onEdit={() => startEdit(task)}
                 onDrag={startDrag}
                 onStepStart={() => {}}
                 onStepTitle={setStepTitle}
                 onStep={onStep}
-                onChildToggle={(id, doneFlag) => apply(setDone(state, id, doneFlag))}
+                onChildToggle={(id, doneFlag) => toggleTask(id, doneFlag)}
                 onChildDelete={onDeleteTask}
                 onChildEdit={startEdit}
               />
@@ -1139,6 +1175,17 @@ function HabitLine({ board, habit, today, week, onToggle, onOpen }) {
       </span>
     </li>
   );
+}
+
+function moodFor(board, today) {
+  const late = board.tasks.some((task) => !task.parentId && !task.done && task.dueAt && task.dueAt < today);
+  if (late) return 'sad';
+  const plan = todayPlan(board, today);
+  const [day] = activityWeek(board, today, 1);
+  const habitsDone = plan.scheduled > 0 && plan.done >= plan.scheduled;
+  if (habitsDone && plan.tasks.length === 0) return 'proud';
+  if ((day && day.onTime > 0) || plan.done > 0) return 'happy';
+  return 'okay';
 }
 
 function splitAttention(groups, today) {

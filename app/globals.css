@@ -50,6 +50,10 @@
   --sheet-shadow: 0 -16px 40px rgba(28, 25, 21, 0.12);
   --well: rgba(255, 252, 248, 0.8);
   --bar-shadow: 0 8px 16px rgba(28, 25, 21, 0.16);
+  --robot-head: #e6ecf3;
+  --robot-edge: #9aa9bb;
+  --robot-screen: #1b2633;
+  --robot-glow: #5eead4;
   --dock-bar: 4.35rem;
   --dock: calc(var(--dock-bar) + env(safe-area-inset-bottom, 0px));
   --plot: 136px;
@@ -107,6 +111,8 @@ html[data-theme="dark"] {
   --sheet-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
   --well: rgba(255, 255, 255, 0.05);
   --bar-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
+  --robot-head: #d5dde7;
+  --robot-edge: #7d8da1;
 }
 
 * { box-sizing: border-box; }
@@ -155,7 +161,120 @@ main {
 
 .brand { display: flex; align-items: center; gap: 0.75rem; }
 
-.logo { flex: none; width: 2.6rem; height: 2.6rem; color: var(--ink); }
+.robot-spot { position: relative; flex: none; width: 3.25rem; height: 3.25rem; }
+
+.robot {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.robot.is-held { z-index: 60; cursor: grabbing; }
+.robot.is-home { transition: transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.robot.mood-okay { --robot-mood: #60a5fa; }
+.robot.mood-happy { --robot-mood: #34d399; }
+.robot.mood-proud { --robot-mood: #fbbf24; }
+.robot.mood-sad { --robot-mood: #fb923c; }
+
+.robot-body { display: block; width: 100%; height: 100%; transform-origin: 50% 85%; }
+.robot-body.idle { animation: robot-float 3.2s ease-in-out infinite; }
+.robot.mood-sad .robot-body.idle { animation: robot-sigh 4.5s ease-in-out infinite; }
+.robot-body.hop { animation: robot-hop 700ms cubic-bezier(0.3, 1.6, 0.5, 1) 2; }
+.robot-body.wiggle { animation: robot-wiggle 650ms ease-in-out; }
+.robot-body.tilt { animation: robot-tilt 1s ease-in-out; }
+.robot-body.spin { animation: robot-spin 900ms cubic-bezier(0.5, 0, 0.3, 1.2); }
+.robot-body.shake { animation: robot-shake 480ms ease-in-out; }
+.robot-body.held { transform: rotate(-8deg) scale(1.08); }
+
+.robot-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.r-head { fill: var(--robot-head); stroke: var(--robot-edge); stroke-width: 1.5; }
+.r-ear { fill: var(--robot-edge); }
+.r-stalk { stroke: var(--robot-edge); stroke-width: 2; stroke-linecap: round; }
+.r-bulb { fill: var(--robot-mood); animation: robot-pulse 2.4s ease-in-out infinite; }
+.r-shine { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; opacity: 0.7; }
+.r-screen, .r-lid { fill: var(--robot-screen); }
+.r-eye, .r-fill { fill: var(--robot-glow); }
+.r-glint { fill: #fff; opacity: 0.85; }
+.r-line { fill: none; stroke: var(--robot-glow); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.r-line.thin { stroke-width: 1.8; }
+.r-ring { fill: none; stroke: var(--robot-glow); stroke-width: 2; }
+.r-cheek { fill: #fb7185; opacity: 0.6; }
+.r-drop { fill: #93c5fd; }
+.r-tear { animation: robot-tear 2.6s ease-in infinite; }
+.r-blink { transform-box: fill-box; transform-origin: center; transition: transform 90ms ease; }
+.r-blink.is-shut { transform: scaleY(0.12); }
+
+.robot-say {
+  position: absolute;
+  left: calc(100% + 0.3rem);
+  top: -0.35rem;
+  z-index: 61;
+  width: max-content;
+  max-width: 13rem;
+  padding: 0.32rem 0.62rem;
+  border-radius: 12px 12px 12px 4px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: var(--shadow);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+  pointer-events: none;
+  animation: robot-say 1.9s ease both;
+}
+
+.robot-burst { position: absolute; left: 50%; top: 42%; width: 0; height: 0; pointer-events: none; }
+.bit { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; opacity: 0; animation: robot-bit 950ms ease-out forwards; }
+.bit svg { display: block; width: 100%; height: 100%; }
+.bit.heart svg { fill: #fb7185; }
+.bit.spark svg { fill: #fbbf24; }
+
+@keyframes robot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes robot-sigh { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-4deg) translateY(1px); } }
+@keyframes robot-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  30% { transform: translateY(-7px) scale(1.04, 0.97); }
+  55% { transform: translateY(0) scale(1.06, 0.92); }
+  75% { transform: translateY(-2px) scale(0.98, 1.03); }
+}
+@keyframes robot-wiggle {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-12deg); }
+  40% { transform: rotate(10deg); }
+  60% { transform: rotate(-7deg); }
+  80% { transform: rotate(4deg); }
+}
+@keyframes robot-tilt { 0%, 100% { transform: rotate(0); } 30%, 70% { transform: rotate(-10deg) translateY(-1px); } }
+@keyframes robot-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes robot-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 50% { transform: translateX(3px); } 75% { transform: translateX(-2px); } }
+@keyframes robot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes robot-tear { 0%, 30% { transform: translateY(0); opacity: 0; } 45% { opacity: 1; } 100% { transform: translateY(7px); opacity: 0; } }
+@keyframes robot-say {
+  0% { opacity: 0; transform: translateY(4px) scale(0.9); }
+  10%, 85% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+@keyframes robot-bit {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robot-body, .r-bulb, .r-tear, .bit, .robot-say { animation: none !important; }
+  .bit { display: none; }
+  .robot.is-home { transition: none; }
+}
 
 .top-actions { display: flex; align-items: center; gap: 0.45rem; }
 
@@ -172,8 +291,6 @@ main {
 }
 
 .themebtn svg { width: 1.25rem; height: 1.25rem; }
-
-.logo svg { display: block; width: 100%; height: 100%; }
 
 h1 {
   display: flex;
