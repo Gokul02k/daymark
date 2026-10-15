@@ -402,57 +402,103 @@ h2 {
 .home { padding-bottom: calc(var(--dock) + 5.4rem); }
 .home.has-undo { padding-bottom: calc(var(--dock) + 9.4rem); }
 
-.habitstrip {
+.hhead {
   display: flex;
-  gap: 0.4rem;
-  overflow-x: auto;
-  margin: 0.85rem 0 0.15rem;
-  padding-bottom: 0.2rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-.habittab {
+.h2note {
+  margin-left: 0.45rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.hhead-days {
+  display: grid;
+  grid-template-columns: repeat(7, 8px);
+  column-gap: 5px;
+  margin: 0 calc(0.85rem + 1px) 0.5rem 0;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hhead-days span { display: flex; justify-content: center; }
+.hhead-days .is-today { color: var(--ok); }
+
+.hline {
   display: flex;
   align-items: center;
+  min-height: 46px;
+  padding: 0 0.85rem 0 0.3rem;
+}
+
+.hline-check {
+  display: grid;
+  place-items: center;
   flex: none;
-  max-width: 14rem;
-  min-height: 36px;
-  padding: 0.1rem 0.65rem 0.1rem 0.2rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.habittab.due { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
-.habittab.done { opacity: 0.62; }
-
-.habittab .check { padding: 0.25rem; min-height: 0; }
-.habittab .box { width: 1.05rem; height: 1.05rem; margin: 0; border-radius: 50%; }
-
-.habname {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
+  width: 2.5rem;
+  height: 2.75rem;
+  padding: 0;
   border: 0;
   background: transparent;
-  padding: 0;
-  font-size: 0.84rem;
-  font-weight: 650;
 }
 
-.habname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hline-check svg { display: block; width: 1.3rem; height: 1.3rem; }
+.hline-ring { fill: var(--box-fill); stroke: var(--box-border); stroke-width: 1.8; }
+.hline-tick { fill: none; stroke: transparent; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.hline.is-open .hline-ring { stroke: var(--ok); }
+.hline.is-done .hline-ring { fill: var(--ok); stroke: var(--ok); }
+.hline.is-done .hline-tick { stroke: var(--on-ok); }
+.hline.is-rest .hline-ring { stroke-dasharray: 2.4 2.4; }
 
-.habstreak {
+.hline-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.6rem 0.55rem 0.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.hline-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hline.is-done .hline-label,
+.hline.is-rest .hline-label { color: var(--muted); }
+
+.hline-streak {
   flex: none;
-  min-width: 1.1rem;
-  padding: 0.05rem 0.32rem;
-  border-radius: 999px;
-  background: var(--ok-soft);
-  color: var(--ok);
-  font-size: 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  color: var(--late-bar);
+  font-size: 0.74rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
+
+.hline-streak svg { display: block; width: 0.8rem; height: 0.8rem; }
+
+.hline-rest { flex: none; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
+
+.hline-dots {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(7, 8px);
+  column-gap: 5px;
+  align-items: center;
+}
+
+.hline-dots .dot { width: 8px; height: 8px; }
 
 .dock {
   position: fixed;

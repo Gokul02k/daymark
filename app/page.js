@@ -623,6 +623,7 @@ export default function HomePage() {
     );
 
   const { attention, rest: restGroups } = splitAttention(groups, today);
+  const habitWeek = Array.from({ length: 7 }, (_, index) => shiftDay(today, index - 6));
 
   function show(tasks) {
     if (!dragOrder || !tasks.every((task) => dragOrder.includes(task.id))) return tasks;
@@ -773,18 +774,36 @@ export default function HomePage() {
       ) : null}
 
       {planToday.habits.length > 0 ? (
-        <div className="habitstrip" aria-label="Habits">
-          {planToday.habits.map((habit) => (
-            <HabitChip
-              key={habit.id}
-              board={state}
-              habit={habit}
-              today={today}
-              onToggle={onToggleHabit}
-              onOpen={openHabit}
-            />
-          ))}
-        </div>
+        <section>
+          <div className="hhead">
+            <h2>
+              Habits
+              <span className="h2note">
+                {planToday.scheduled > 0 ? `${planToday.done} of ${planToday.scheduled} today` : 'Rest day'}
+              </span>
+            </h2>
+            <span className="hhead-days" aria-hidden="true">
+              {habitWeek.map((day) => (
+                <span key={day} className={day === today ? 'is-today' : undefined}>
+                  {weekday(day, 'narrow')}
+                </span>
+              ))}
+            </span>
+          </div>
+          <ul className="tasks">
+            {planToday.habits.map((habit) => (
+              <HabitLine
+                key={habit.id}
+                board={state}
+                habit={habit}
+                today={today}
+                week={habitWeek}
+                onToggle={onToggleHabit}
+                onOpen={openHabit}
+              />
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       {listEmpty && planToday.habits.length === 0 ? (
@@ -1072,26 +1091,48 @@ function HabitsView({ board, today, habitText, onHabitText, onAddHabit, onToggle
   );
 }
 
-function HabitChip({ board, habit, today, onToggle, onOpen }) {
+function HabitLine({ board, habit, today, week, onToggle, onOpen }) {
   const scheduled = habitScheduled(habit, today);
   const done = habitChecked(board, habit.id, today);
   const { current } = habitStats(board, habit, today);
+  let tone = 'is-rest';
+  if (done) tone = 'is-done';
+  else if (scheduled) tone = 'is-open';
   return (
-    <div className={done ? 'habittab done' : scheduled ? 'habittab due' : 'habittab'}>
+    <li className={`hline ${tone}`}>
       <button
         type="button"
-        className={done ? 'check checked' : 'check'}
+        className="hline-check"
         aria-pressed={done}
         aria-label={`${habit.name} today`}
         onClick={() => onToggle(habit.id, today, !done)}
       >
-        <span className="box round" aria-hidden="true" />
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle className="hline-ring" cx="12" cy="12" r="9.25" />
+          <path className="hline-tick" d="M7.8 12.4l2.9 2.9 5.6-6.1" />
+        </svg>
       </button>
-      <button type="button" className="habname" onClick={() => onOpen(habit)}>
-        {habit.name}
-        {current > 0 ? <span className="habstreak">{current}</span> : null}
+      <button type="button" className="hline-name" onClick={() => onOpen(habit)}>
+        <span className="hline-label">{habit.name}</span>
+        {current > 0 ? (
+          <span className="hline-streak" aria-label={`${current}-day streak`}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 2.5c.6 3-2.4 4.6-2.4 7.4 0 1.3 1 2.2 2.2 2.2 1.5 0 2.4-1.3 2.1-3 2.6 1.7 4.1 4.2 4.1 6.6a6 6 0 0 1-12 .1c0-4.5 4.8-7.3 6-13.3z"
+                fill="currentColor"
+              />
+            </svg>
+            {current}
+          </span>
+        ) : null}
+        {tone === 'is-rest' ? <span className="hline-rest">Rest day</span> : null}
       </button>
-    </div>
+      <span className="hline-dots" aria-hidden="true">
+        {week.map((day) => (
+          <span key={day} className={`dot ${dayState(board, habit, day, today)}`} />
+        ))}
+      </span>
+    </li>
   );
 }
 
