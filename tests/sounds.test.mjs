@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { existsSync } from 'node:fs';
-import { scheduleBuddySound, scheduleSamples, sampleFiles } from '../app/sounds.js';
+import { MOODS, recordedKinds, scheduleBuddySound, scheduleSamples, sampleFiles, takesFor } from '../app/sounds.js';
 
 class FakeParam {
   constructor(context, value) {
@@ -95,23 +95,30 @@ class FakeContext {
   }
 }
 
-const KINDS = ['robot', 'cat', 'puppy', 'bunny', 'panda', 'pig'];
 const CUES = [
   'add', 'edit', 'done', 'late', 'clear', 'habit', 'allhabits', 'undo', 'bye', 'poke', 'pokesad', 'dizzy', 'boing', 'wheee', 'meet',
   'pet', 'tickle', 'achoo', 'sneeze', 'ears', 'yawn', 'snore', 'wake', 'love',
 ];
 
-test('every companion has a sound for every reaction, and each one schedules cleanly', () => {
-  for (const kind of KINDS) {
-    for (const cue of CUES) {
-      const context = new FakeContext();
-      assert.equal(scheduleBuddySound(context, kind, cue), true, `${kind} ${cue}`);
-      assert.ok(context.started > 0, `${kind} ${cue} played nothing`);
-    }
+test('the robot has a beep for every reaction, and each one schedules cleanly', () => {
+  for (const cue of CUES) {
+    const context = new FakeContext();
+    assert.equal(scheduleBuddySound(context, 'robot', cue), true, cue);
+    assert.ok(context.started > 0, `robot ${cue} played nothing`);
   }
 });
 
-test('a late finish sighs first, then plays the happy sound after it', () => {
+test('the animals have a real recording for every mood and are never synthesized', () => {
+  assert.deepEqual(recordedKinds().sort(), ['bunny', 'cat', 'panda', 'pig', 'puppy']);
+  for (const kind of recordedKinds()) {
+    for (const mood of MOODS) assert.ok(takesFor(kind, mood).length > 0, `${kind} has no ${mood}`);
+    const context = new FakeContext();
+    assert.equal(scheduleBuddySound(context, kind, 'done'), false);
+    assert.equal(context.started, 0);
+  }
+});
+
+test('a late finish sighs first, then plays the happy beeps after it', () => {
   const context = new FakeContext();
   const starts = [];
   const original = context.createOscillator.bind(context);
@@ -124,7 +131,7 @@ test('a late finish sighs first, then plays the happy sound after it', () => {
     };
     return node;
   };
-  scheduleBuddySound(context, 'cat', 'late');
+  scheduleBuddySound(context, 'robot', 'late');
   assert.ok(starts.some((time) => time >= context.currentTime + 0.45));
 });
 
