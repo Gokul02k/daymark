@@ -88,6 +88,7 @@ test('a taken username, a short password, and a bad name are each refused', asyn
     assert.equal((await signUp(from(ip), { username: 'asha', password: 'secret-1' })).access, 'open');
     assert.equal((await signUp(from(ip), { username: 'ASHA', password: 'secret-2' })).access, 'taken');
     assert.equal((await signUp(from(ip), { username: 'ravi', password: '123' })).access, 'password');
+    assert.equal((await signUp(from(ip), { username: 'ravi', password: '1234' })).access, 'open');
     assert.equal((await signUp(from(ip), { username: '!!', password: 'secret-1' })).access, 'username');
   });
 });

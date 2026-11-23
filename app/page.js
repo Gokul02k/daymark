@@ -1572,7 +1572,7 @@ const SIGNIN_HINTS = {
   closed: 'New accounts are off here until an invite code (DAYMARK_PASSCODE) is set.',
   taken: 'That username is taken. Try another, or sign in.',
   username: 'Use 3 to 24 letters, numbers, dots, dashes, or underscores.',
-  password: 'Use a password of at least 6 characters.',
+  password: 'Use a password of at least 4 characters.',
   throttled: 'Too many wrong tries. Wait 15 minutes, then try again.',
   off: 'This Daymark keeps lists on each device, so there is nothing to sign in to.',
   error: 'Could not reach Daymark. Try again.',
@@ -1586,7 +1586,7 @@ function niceName(username) {
 function SignInCard({ form, known, signup, hint, throttled, onChange, onSubmit, onForget }) {
   const creating = form.mode === 'signup';
   const canCreate = signup === 'open' || signup === 'invite';
-  const ready = form.username.trim().length >= 3 && form.password.length >= (creating ? 6 : 1) && (!creating || signup !== 'invite' || form.invite.trim());
+  const ready = form.username.trim().length >= 3 && form.password.length >= (creating ? 4 : 1) && (!creating || signup !== 'invite' || form.invite.trim());
   return (
     <form className="signin" onSubmit={onSubmit} aria-label={creating ? 'Create an account' : 'Sign in'}>
       <p className="signin-title">
@@ -1621,7 +1621,7 @@ function SignInCard({ form, known, signup, hint, throttled, onChange, onSubmit, 
           value={form.password}
           onChange={(event) => onChange({ password: event.target.value })}
           autoComplete={creating ? 'new-password' : 'current-password'}
-          minLength={creating ? 6 : undefined}
+          minLength={creating ? 4 : undefined}
           maxLength={200}
           required
         />

@@ -46,7 +46,7 @@ Out of the box, each browser keeps its own list. These steps in the Vercel proje
 2. For reminders at the time you pick, also add **Upstash QStash** (free plan) from the same Storage page, or from the Upstash console. The project needs `QSTASH_TOKEN`. Skip this and reminders for a closed Daymark come once a day, around 9 AM.
 3. In **Settings → Environment Variables**, add `DAYMARK_PASSCODE` (the invite code, at least 4 characters, like `4821`) and `CRON_SECRET` (any long random text). The reminder job refuses to run on Vercel without `CRON_SECRET`.
 4. Redeploy.
-5. On each phone or computer, open Daymark. Tap **Create an account** the first time, pick a username and a password (6 characters or more), and type the invite code. After that, sign in with the username and password. A small blue tick appears next to Daymark. Then turn on **Remind me** for a task and allow notifications. On iPhone, open Daymark from its Home Screen icon first.
+5. On each phone or computer, open Daymark. Tap **Create an account** the first time, pick a username and a password (4 characters or more, like a PIN), and type the invite code. After that, sign in with the username and password. A small blue tick appears next to Daymark. Then turn on **Remind me** for a task and allow notifications. On iPhone, open Daymark from its Home Screen icon first.
 
 The invite code is only for making accounts, so share it with the people you want on this Daymark. Without it set, a connected database refuses new accounts (people who already have one can still sign in). Passwords are stored as salted scrypt hashes. After 5 wrong tries from one network, Daymark refuses sign-ins and sign-ups from there for 15 minutes.
 
