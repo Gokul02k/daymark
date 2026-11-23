@@ -1,34 +1,49 @@
 import { emptyBoard, normalizeBoard } from './board';
 
 const KEY = 'gokul-v1'; // kept so tasks saved under the old name still load
+const USER_KEY = 'daymark-board:'; // each account's own copy on this device
 const LIST_KEY = 'daymark-list';
 const PASS_KEY = 'daymark-pass';
+const LAST_USER_KEY = 'daymark-last-user';
 const OLD_PASSCODE_KEY = 'daymark-passcode';
 const THEME_KEY = 'daymark-theme';
 const SOUND_KEY = 'daymark-sound';
 const THEME_COLOR = { light: '#f3efe6', dark: '#12110f' };
 
-export function loadPersisted() {
+function boardKey(user) {
+  return user ? `${USER_KEY}${user}` : KEY;
+}
+
+/** With `user`, that account's copy. Without, the list kept before signing in (or with no accounts). */
+export function loadPersisted(user) {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(boardKey(user));
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function savePersisted(data) {
+export function savePersisted(data, user) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(boardKey(user), JSON.stringify(data));
   } catch (e) {
     console.warn('Storage save failed', e);
   }
 }
 
-export function loadState() {
-  return normalizeBoard(loadPersisted() || emptyBoard());
+export function loadState(user) {
+  return normalizeBoard(loadPersisted(user) || emptyBoard());
+}
+
+/** Signing out leaves nothing of that person's list on this device. */
+export function forgetBoard(user) {
+  if (!user || typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(boardKey(user));
+  } catch {}
 }
 
 export function loadSelectedList() {
@@ -73,27 +88,48 @@ export function applyTheme(theme) {
   return next;
 }
 
-/** The signed pass from unlocking, or null once it has run out. */
+/** The signed pass from signing in, or null once it has run out. Old passes had no user. */
 export function loadPass() {
   if (typeof window === 'undefined') return null;
   for (const store of [sessionStorage, localStorage]) {
     try {
       const saved = JSON.parse(store.getItem(PASS_KEY) || 'null');
-      if (saved?.pass && saved.expiresAt > Date.now()) return saved;
+      if (saved?.pass && saved.user && saved.expiresAt > Date.now()) return saved;
     } catch {}
   }
   return null;
 }
 
-export function savePass({ pass, expiresAt, persist }) {
+export function savePass({ pass, expiresAt, persist, user }) {
   clearPass();
-  const store = persist ? localStorage : sessionStorage;
-  store.setItem(PASS_KEY, JSON.stringify({ pass, expiresAt }));
+  try {
+    const store = persist ? localStorage : sessionStorage;
+    store.setItem(PASS_KEY, JSON.stringify({ pass, expiresAt, user }));
+    localStorage.setItem(LAST_USER_KEY, user);
+  } catch {}
 }
 
 export function clearPass() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(PASS_KEY);
-  sessionStorage.removeItem(PASS_KEY);
-  localStorage.removeItem(OLD_PASSCODE_KEY);
+  try {
+    localStorage.removeItem(PASS_KEY);
+    sessionStorage.removeItem(PASS_KEY);
+    localStorage.removeItem(OLD_PASSCODE_KEY);
+  } catch {}
+}
+
+/** Who signed in here last, so an expired pass can still show their list and fill in the name. */
+export function loadLastUser() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return localStorage.getItem(LAST_USER_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function forgetLastUser() {
+  try {
+    localStorage.removeItem(LAST_USER_KEY);
+  } catch {}
 }

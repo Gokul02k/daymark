@@ -1,5 +1,5 @@
 import { nextDigestAt, reminderInstant, reminderKey } from './board.js';
-import { readJson, writeJson } from './boardStore.js';
+import { readOwn, writeOwn } from './boardStore.js';
 
 const QSTASH_MAX_DELAY_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -13,10 +13,10 @@ export function publicOrigin(request) {
 }
 
 /** Asks QStash to call the reminder job at each reminder's moment, once per task and time. */
-export async function scheduleWakeUps(board, origin, fallbackZone) {
+export async function scheduleWakeUps(user, board, origin, fallbackZone) {
   if (!exactReminders()) return;
   const now = Date.now();
-  const booked = (await readJson('scheduled')) || {};
+  const booked = (await readOwn('scheduled', user)) || {};
   const keep = {};
   const wanted = new Map();
   for (const task of board.tasks) {
@@ -54,7 +54,7 @@ export async function scheduleWakeUps(board, origin, fallbackZone) {
       }
     }
   }
-  if (JSON.stringify(keep) !== JSON.stringify(booked)) await writeJson('scheduled', keep);
+  if (JSON.stringify(keep) !== JSON.stringify(booked)) await writeOwn('scheduled', user, keep);
 }
 
 async function wakeAt(origin, at) {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { scheduleBuddySound } from '../app/sounds.js';
+import { existsSync } from 'node:fs';
+import { scheduleBuddySound, scheduleSamples, sampleFiles } from '../app/sounds.js';
 
 class FakeParam {
   constructor(context, value) {
@@ -64,7 +65,9 @@ class FakeContext {
   }
 
   createBufferSource() {
-    return new FakeSource(this);
+    const node = new FakeSource(this);
+    node.playbackRate = new FakeParam(this, 1);
+    return node;
   }
 
   createGain() {
@@ -93,7 +96,10 @@ class FakeContext {
 }
 
 const KINDS = ['robot', 'cat', 'puppy', 'bunny', 'panda', 'pig'];
-const CUES = ['add', 'edit', 'done', 'late', 'clear', 'habit', 'allhabits', 'undo', 'bye', 'poke', 'pokesad', 'dizzy', 'boing', 'wheee', 'meet'];
+const CUES = [
+  'add', 'edit', 'done', 'late', 'clear', 'habit', 'allhabits', 'undo', 'bye', 'poke', 'pokesad', 'dizzy', 'boing', 'wheee', 'meet',
+  'pet', 'tickle', 'achoo', 'sneeze', 'ears', 'yawn', 'snore', 'wake', 'love',
+];
 
 test('every companion has a sound for every reaction, and each one schedules cleanly', () => {
   for (const kind of KINDS) {
@@ -120,4 +126,28 @@ test('a late finish sighs first, then plays the happy sound after it', () => {
   };
   scheduleBuddySound(context, 'cat', 'late');
   assert.ok(starts.some((time) => time >= context.currentTime + 0.45));
+});
+
+test('a take of recordings plays every clip at its own moment, and waits until all are loaded', () => {
+  const context = new FakeContext();
+  const starts = [];
+  const original = context.createBufferSource.bind(context);
+  context.createBufferSource = () => {
+    const node = original();
+    node.start = (time) => starts.push(time);
+    return node;
+  };
+  const buffer = { duration: 0.3 };
+  const take = [['cat/meow'], ['cat/trill', 0.25, 1.2]];
+  assert.equal(scheduleSamples(context, take, 0, (file) => (file === 'cat/meow' ? buffer : null)), false);
+  assert.equal(starts.length, 0);
+  assert.equal(scheduleSamples(context, take, 0.5, () => buffer), true);
+  assert.equal(starts.length, 2);
+  assert.ok(Math.abs(starts[1] - starts[0] - 0.25) < 1e-9);
+  assert.ok(starts[0] >= context.currentTime + 0.5);
+});
+
+test('every recording a companion asks for is in public/sounds', () => {
+  const missing = sampleFiles().filter((file) => !existsSync(new URL(`../public/sounds/${file}.mp3`, import.meta.url)));
+  assert.deepEqual(missing, []);
 });

@@ -1,5 +1,5 @@
 import webpush from 'web-push';
-import { readJson, writeJson } from './boardStore.js';
+import { listUsers, readJson, readOwn, writeJson, writeOwn } from './boardStore.js';
 
 const SUBJECT = process.env.VAPID_SUBJECT || 'https://github.com/Gokul02k/daymark';
 const MAX_DEVICES = 10;
@@ -25,21 +25,25 @@ export function cleanSubscription(raw) {
   return { endpoint, keys: { p256dh, auth } };
 }
 
-export async function readDevices() {
-  const list = await readJson('push');
+export async function readDevices(user) {
+  const list = await readOwn('push', user);
   return Array.isArray(list) ? list : [];
 }
 
-export async function saveDevice(subscription, timeZone) {
-  const rest = (await readDevices()).filter((device) => device.endpoint !== subscription.endpoint);
+/** A phone gets one person's reminders: whoever signed in on it last. */
+export async function saveDevice(user, subscription, timeZone) {
+  for (const other of await listUsers()) {
+    if (other !== user) await removeDevice(other, subscription.endpoint);
+  }
+  const rest = (await readDevices(user)).filter((device) => device.endpoint !== subscription.endpoint);
   const device = { ...subscription, timeZone, savedAt: new Date().toISOString() };
-  await writeJson('push', [...rest, device].slice(-MAX_DEVICES));
+  await writeOwn('push', user, [...rest, device].slice(-MAX_DEVICES));
 }
 
-export async function removeDevice(endpoint) {
-  const list = await readDevices();
+export async function removeDevice(user, endpoint) {
+  const list = await readDevices(user);
   const next = list.filter((device) => device.endpoint !== endpoint);
-  if (next.length !== list.length) await writeJson('push', next);
+  if (next.length !== list.length) await writeOwn('push', user, next);
 }
 
 export function sendReminder(keys, device, payload) {

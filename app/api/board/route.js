@@ -14,34 +14,34 @@ function denied(access) {
 }
 
 export async function GET(request) {
-  const access = await requestAccess(request);
+  const { access, user } = await requestAccess(request);
   if (access !== 'open') return denied(access);
   try {
-    const board = await readBoard();
-    return NextResponse.json({ synced: true, board: board ? normalizeBoard(board) : null });
+    const board = await readBoard(user);
+    return NextResponse.json({ synced: true, user, board: board ? normalizeBoard(board) : null });
   } catch (err) {
     return NextResponse.json({ synced: false, reason: 'error', board: null, error: err.message }, { status: 503 });
   }
 }
 
 export async function PUT(request) {
-  const access = await requestAccess(request);
+  const { access, user } = await requestAccess(request);
   if (access !== 'open') return denied(access);
   let board;
   try {
     const body = await request.json();
     const incoming = normalizeBoard(body.board);
-    const current = await readBoard();
+    const current = await readBoard(user);
     board = current ? mergeBoards(current, incoming) : incoming;
     board.updatedAt = new Date().toISOString();
-    await writeBoard(board);
+    await writeBoard(user, board);
   } catch (err) {
     return NextResponse.json({ synced: false, reason: 'error', error: err.message || 'Could not save' }, { status: 400 });
   }
   try {
-    await scheduleWakeUps(board, publicOrigin(request), validZone(request.headers.get('x-daymark-zone')));
+    await scheduleWakeUps(user, board, publicOrigin(request), validZone(request.headers.get('x-daymark-zone')));
   } catch (err) {
     console.error('Daymark could not schedule reminders', err.message);
   }
-  return NextResponse.json({ synced: true, board });
+  return NextResponse.json({ synced: true, user, board });
 }

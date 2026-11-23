@@ -1,7 +1,10 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import path from 'path';
 
-const DIR = path.join(process.cwd(), 'engine', 'var');
+// DAYMARK_DATA_DIR lets tests keep their own folder.
+function dataDir() {
+  return process.env.DAYMARK_DATA_DIR || path.join(process.cwd(), 'engine', 'var');
+}
 
 function kvConfig() {
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
@@ -45,31 +48,79 @@ export async function readJson(name) {
     return data.result ? JSON.parse(data.result) : null;
   }
   try {
-    return JSON.parse(await readFile(path.join(DIR, `${name}.json`), 'utf8'));
+    return JSON.parse(await readFile(path.join(dataDir(), `${name}.json`), 'utf8'));
   } catch (err) {
     if (err.code === 'ENOENT') return null;
     throw err;
   }
 }
 
+/** Returns false when `onlyIfMissing` is set and something was already saved under `name`. */
 export async function writeJson(name, value, { onlyIfMissing = false } = {}) {
   const mode = storeMode();
   if (mode === 'off') throw noStore();
   const text = JSON.stringify(value);
   if (mode === 'redis') {
     const command = ['SET', `daymark-${name}`, text];
-    await kvCommand(onlyIfMissing ? [...command, 'NX'] : command);
-    return;
+    const data = await kvCommand(onlyIfMissing ? [...command, 'NX'] : command);
+    return !onlyIfMissing || data.result === 'OK';
   }
-  if (onlyIfMissing && (await readJson(name)) !== null) return;
-  await mkdir(DIR, { recursive: true });
-  await writeFile(path.join(DIR, `${name}.json`), text);
+  await mkdir(dataDir(), { recursive: true });
+  const file = path.join(dataDir(), `${name}.json`);
+  if (onlyIfMissing) {
+    try {
+      await writeFile(file, text, { flag: 'wx' });
+      return true;
+    } catch (err) {
+      if (err.code === 'EEXIST') return false;
+      throw err;
+    }
+  }
+  await writeFile(file, text);
+  return true;
 }
 
-export function readBoard() {
-  return readJson('board');
+/** Each account keeps its own list. With no account (the old single list), the name is plain `board`. */
+function own(name, user) {
+  return user ? `${name}-${user}` : name;
 }
 
-export function writeBoard(board) {
-  return writeJson('board', board);
+export function readBoard(user) {
+  return readJson(own('board', user));
+}
+
+export function writeBoard(user, board) {
+  return writeJson(own('board', user), board);
+}
+
+export function readOwn(name, user) {
+  return readJson(own(name, user));
+}
+
+export function writeOwn(name, user, value) {
+  return writeJson(own(name, user), value);
+}
+
+/** Every account name, so the reminder job can visit each list. */
+export async function listUsers() {
+  const mode = storeMode();
+  if (mode === 'off') return [];
+  if (mode === 'redis') {
+    const data = await kvCommand(['SMEMBERS', 'daymark-users']);
+    return Array.isArray(data.result) ? data.result.sort() : [];
+  }
+  try {
+    const files = await readdir(dataDir());
+    return files
+      .map((file) => /^account-(.+)\.json$/.exec(file)?.[1])
+      .filter(Boolean)
+      .sort();
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+export async function rememberUser(user) {
+  if (storeMode() === 'redis') await kvCommand(['SADD', 'daymark-users', user]);
 }

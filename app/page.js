@@ -50,6 +50,9 @@ import {
 import {
   clearPass,
   applyTheme,
+  forgetBoard,
+  forgetLastUser,
+  loadLastUser,
   loadPass,
   loadSound,
   loadTheme,
@@ -110,7 +113,9 @@ export default function HomePage() {
   const [dragOrder, setDragOrder] = useState(null);
   const [remindHint, setRemindHint] = useState('');
   const [pushState, setPushState] = useState('unknown');
-  const [passInput, setPassInput] = useState('');
+  const [user, setUser] = useState('');
+  const [accounts, setAccounts] = useState(null);
+  const [signin, setSignin] = useState({ mode: 'signin', username: '', password: '', invite: '', busy: false });
   const [passHint, setPassHint] = useState('');
   const [theme, setTheme] = useState('light');
   const [soundOn, setSoundOn] = useState(true);
@@ -122,6 +127,7 @@ export default function HomePage() {
   const pushInfo = useRef(null);
   const pushChecked = useRef(false);
   const throttledUntil = useRef(0);
+  const userRef = useRef('');
 
   const listId = state?.lists.some((list) => list.id === selected) ? selected : 'inbox';
 
@@ -129,7 +135,7 @@ export default function HomePage() {
     const board = normalizeBoard(next);
     stateRef.current = board;
     setState(board);
-    savePersisted(board);
+    savePersisted(board, userRef.current);
     if (!push) return;
     clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => send(board), 350);
@@ -146,6 +152,8 @@ export default function HomePage() {
   }
 
   async function send(board) {
+    const pass = loadPass();
+    if (pass && pass.user !== userRef.current) return;
     try {
       const res = await api('/api/board', { method: 'PUT', body: { board } });
       const data = await res.json();
@@ -153,6 +161,7 @@ export default function HomePage() {
         lockedOut(data.reason);
         return;
       }
+      if (data.user && data.user !== userRef.current) return;
       setSyncMode('synced');
       const merged = normalizeBoard(data.board);
       if (signature(merged) !== signature(stateRef.current)) apply(merged, { push: false });
@@ -241,12 +250,36 @@ export default function HomePage() {
     };
   }, []);
 
+  /** Shows `next`'s own list. Nothing from one person's list ever lands in another's. */
+  function switchUser(next) {
+    if (userRef.current === next) return;
+    clearTimeout(pushTimer.current);
+    userRef.current = next;
+    setUser(next);
+    const board = loadState(next || undefined);
+    stateRef.current = board;
+    setState(board);
+    setUndo(null);
+    setSheet(null);
+    setHabitSheet(null);
+    setComposer(null);
+    pushChecked.current = false;
+  }
+
   useEffect(() => {
-    const local = loadState();
+    if (!loadPass()) clearPass();
+    const known = loadPass()?.user || loadLastUser();
+    userRef.current = known;
+    setUser(known);
+    setSignin((current) => ({ ...current, username: known }));
+    const local = loadState(known || undefined);
     stateRef.current = local;
     setState(local);
     setSelected(loadSelectedList());
-    if (!loadPass()) clearPass();
+    api('/api/account')
+      .then((res) => res.json())
+      .then((info) => setAccounts(info))
+      .catch(() => {});
 
     const onPrompt = (event) => {
       event.preventDefault();
@@ -264,6 +297,7 @@ export default function HomePage() {
         const data = await res.json();
         if (cancel) return 'device';
         if (!data.synced) return lockedOut(data.reason);
+        if (data.user !== undefined && (data.user || '') !== userRef.current) switchUser(data.user || '');
         setSyncMode('synced');
         preparePush();
         if (!data.board) {
@@ -304,7 +338,7 @@ export default function HomePage() {
     checkReminders();
   }, [state]);
 
-  const sheetOpen = Boolean(sheet) || Boolean(habitSheet) || Boolean(composer);
+  const sheetOpen = Boolean(sheet) || Boolean(habitSheet) || Boolean(composer) || Boolean(settings);
   useEffect(() => {
     if (!sheetOpen) return undefined;
     const onKey = (event) => {
@@ -312,6 +346,7 @@ export default function HomePage() {
       setSheet(null);
       setHabitSheet(null);
       setComposer(null);
+      cancelSettings();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -657,44 +692,79 @@ export default function HomePage() {
       latest = next;
       setDragOrder(next);
     }
-    function onUp() {
+    function onUp(upEvent) {
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
       setDragOrder(null);
-      if (latest.join() !== ids.join()) apply(reorderTasks(stateRef.current, latest));
+      if (upEvent.type === 'pointerup' && latest.join() !== ids.join()) apply(reorderTasks(stateRef.current, latest));
     }
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
   }
 
-  async function unlockWith(code) {
+  async function submitSignin(event) {
+    event.preventDefault();
+    if (signin.busy) return;
+    const signup = signin.mode === 'signup';
     setPassHint('');
-    setPassInput('');
+    setSignin((current) => ({ ...current, busy: true }));
     try {
-      const res = await fetch('/api/unlock', {
+      const res = await fetch('/api/account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode: code }),
+        body: JSON.stringify({
+          action: signup ? 'signup' : 'signin',
+          username: signin.username,
+          password: signin.password,
+          invite: signin.invite,
+        }),
       });
       const data = await res.json();
-      if (!data.unlocked) {
+      if (!data.signedIn) {
         if (data.reason === 'throttled') throttledUntil.current = Date.now() + 15 * 60 * 1000;
-        if (data.reason === 'locked') setPassHint("That passcode didn't match.");
-        lockedOut(data.reason);
+        setPassHint(SIGNIN_HINTS[data.reason] || SIGNIN_HINTS.error);
+        setSignin((current) => ({ ...current, password: '', busy: false }));
+        if (data.reason === 'throttled') setSyncMode('throttled');
         return;
       }
-      if (data.pass) savePass(data);
+      savePass(data);
       throttledUntil.current = 0;
+      switchUser(data.user);
+      setSignin({ mode: 'signin', username: data.user, password: '', invite: '', busy: false });
       await pullRef.current?.();
+      const board = stateRef.current;
+      if (board && !board.companion.user) {
+        apply({ ...board, companion: { ...board.companion, user: niceName(data.user), updatedAt: new Date().toISOString() } });
+      }
+      cue('meet');
     } catch {
-      setPassHint('Could not reach Daymark. Try again.');
+      setPassHint(SIGNIN_HINTS.error);
+      setSignin((current) => ({ ...current, busy: false }));
     }
   }
 
-  function onPassInput(value) {
-    const digits = value.replace(/\D/g, '').slice(0, 4);
-    setPassInput(digits);
-    if (digits.length === 4) unlockWith(digits);
+  /** Takes this device off the person's reminders, then forgets their list and pass here. */
+  async function signOut() {
+    const leaving = userRef.current;
+    try {
+      const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+      const sub = reg ? await reg.pushManager?.getSubscription() : null;
+      if (sub) {
+        await api('/api/push', { method: 'DELETE', body: { endpoint: sub.endpoint } }).catch(() => {});
+        await sub.unsubscribe().catch(() => {});
+      }
+    } catch {}
+    clearPass();
+    forgetBoard(leaving);
+    forgetLastUser();
+    switchUser('');
+    setSettings(null);
+    setPushState('unknown');
+    setPassHint('');
+    setSignin({ mode: 'signin', username: '', password: '', invite: '', busy: false });
+    setSyncMode('locked');
   }
 
   async function onInstall() {
@@ -731,6 +801,8 @@ export default function HomePage() {
     );
 
   const { attention, rest: restGroups } = splitAttention(groups, today);
+  const signingIn = syncMode === 'locked' || syncMode === 'throttled';
+  const signedOut = signingIn && !user;
   const habitWeek = Array.from({ length: 7 }, (_, index) => shiftDay(today, index - 6));
 
   function show(tasks) {
@@ -779,33 +851,20 @@ export default function HomePage() {
           ) : null}
         </div>
       </header>
-      {syncMode === 'locked' ? (
-        <form
-          className="unlock"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (passInput.length === 4) unlockWith(passInput);
-          }}
-        >
-          <input
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]{4}"
-            maxLength={4}
-            value={passInput}
-            onChange={(event) => onPassInput(event.target.value)}
-            placeholder="••••"
-            aria-label="4-digit passcode"
-            autoComplete="off"
-          />
-          <button type="submit" disabled={passInput.length !== 4}>
-            Unlock
-          </button>
-        </form>
+      {signingIn ? (
+        <SignInCard
+          form={signin}
+          known={user}
+          signup={accounts?.signup || 'open'}
+          hint={passHint}
+          throttled={throttledUntil.current > Date.now()}
+          onChange={(patch) => setSignin((current) => ({ ...current, ...patch }))}
+          onSubmit={submitSignin}
+          onForget={signOut}
+        />
       ) : null}
-      {passHint ? <p className="hint tight">{passHint}</p> : null}
 
-      {view === 'activity' ? (
+      {signedOut ? null : view === 'activity' ? (
         <ActivityView
           board={state}
           today={today}
@@ -979,6 +1038,7 @@ export default function HomePage() {
         </>
       )}
 
+      {signedOut ? null : (
       <nav className="dock" role="tablist" aria-label="View">
         {[
           ['tasks', 'Home', openCount + habitLeft, groups.overdue.length > 0],
@@ -998,6 +1058,7 @@ export default function HomePage() {
           </button>
         ))}
       </nav>
+      )}
 
       {undo ? (
         <div className="undo">
@@ -1044,6 +1105,8 @@ export default function HomePage() {
           onTheme={previewTheme}
           onSave={saveSettings}
           onCancel={cancelSettings}
+          user={syncMode === 'synced' ? user : ''}
+          onSignOut={signOut}
         />
       ) : null}
 
@@ -1503,7 +1566,104 @@ function AddChooser({ mode, habitText, onHabitText, onTask, onHabit, onList, onS
   );
 }
 
-function SettingsSheet({ draft, hint, pushState, onChange, onTheme, onSave, onCancel }) {
+const SIGNIN_HINTS = {
+  wrong: "That username and password don't match.",
+  invite: "That invite code isn't right. Ask whoever set up this Daymark.",
+  closed: 'New accounts are off here until an invite code (DAYMARK_PASSCODE) is set.',
+  taken: 'That username is taken. Try another, or sign in.',
+  username: 'Use 3 to 24 letters, numbers, dots, dashes, or underscores.',
+  password: 'Use a password of at least 6 characters.',
+  throttled: 'Too many wrong tries. Wait 15 minutes, then try again.',
+  off: 'This Daymark keeps lists on each device, so there is nothing to sign in to.',
+  error: 'Could not reach Daymark. Try again.',
+};
+
+function niceName(username) {
+  const first = username.split(/[._-]/)[0] || username;
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
+function SignInCard({ form, known, signup, hint, throttled, onChange, onSubmit, onForget }) {
+  const creating = form.mode === 'signup';
+  const canCreate = signup === 'open' || signup === 'invite';
+  const ready = form.username.trim().length >= 3 && form.password.length >= (creating ? 6 : 1) && (!creating || signup !== 'invite' || form.invite.trim());
+  return (
+    <form className="signin" onSubmit={onSubmit} aria-label={creating ? 'Create an account' : 'Sign in'}>
+      <p className="signin-title">
+        {creating ? 'Make your own Daymark' : known ? `Welcome back, ${niceName(known)}` : 'Sign in to Daymark'}
+      </p>
+      <p className="note">
+        {creating
+          ? 'Your tasks, habits, reminders, and companion are yours alone.'
+          : known
+            ? 'Your pass ran out. Sign in again to keep syncing. Your list still works on this device.'
+            : 'Everyone here has their own list. Sign in, or make an account.'}
+      </p>
+      <label>
+        Username
+        <input
+          className="field"
+          value={form.username}
+          onChange={(event) => onChange({ username: event.target.value })}
+          autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={24}
+          required
+        />
+      </label>
+      <label>
+        Password
+        <input
+          className="field"
+          type="password"
+          value={form.password}
+          onChange={(event) => onChange({ password: event.target.value })}
+          autoComplete={creating ? 'new-password' : 'current-password'}
+          minLength={creating ? 6 : undefined}
+          maxLength={200}
+          required
+        />
+      </label>
+      {creating && signup === 'invite' ? (
+        <label>
+          Invite code
+          <input
+            className="field"
+            value={form.invite}
+            onChange={(event) => onChange({ invite: event.target.value })}
+            autoComplete="off"
+            inputMode="text"
+            required
+          />
+        </label>
+      ) : null}
+      {hint ? <p className="hint tight">{hint}</p> : null}
+      <div className="signin-actions">
+        <button type="submit" className="primary" disabled={!ready || form.busy || throttled}>
+          {form.busy ? 'One moment…' : creating ? 'Create account' : 'Sign in'}
+        </button>
+        {creating ? (
+          <button type="button" className="textbtn" onClick={() => onChange({ mode: 'signin', password: '' })}>
+            I have an account
+          </button>
+        ) : canCreate ? (
+          <button type="button" className="textbtn" onClick={() => onChange({ mode: 'signup', password: '' })}>
+            Create an account
+          </button>
+        ) : null}
+        {known && !creating ? (
+          <button type="button" className="textbtn" onClick={onForget}>
+            Not {niceName(known)}?
+          </button>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+function SettingsSheet({ draft, hint, pushState, onChange, onTheme, onSave, onCancel, user, onSignOut }) {
   const set = (patch) => onChange({ ...draft, ...patch });
   const pet = draft.name.trim() || defaultBuddyName(draft.kind);
   const times = draft.times;
@@ -1532,6 +1692,21 @@ function SettingsSheet({ draft, hint, pushState, onChange, onTheme, onSave, onCa
         }}
       >
         <p className="sheet-title">Settings</p>
+
+        {user ? (
+          <section className="settings-section">
+            <p className="label">Account</p>
+            <div className="accountrow">
+              <span>
+                Signed in as <strong>{user}</strong>
+              </span>
+              <button type="button" className="textbtn" onClick={onSignOut}>
+                Sign out
+              </button>
+            </div>
+            <p className="note">Signing out removes your list from this device. It stays safe on the server.</p>
+          </section>
+        ) : null}
 
         <section className="settings-section">
           <p className="label">Companion</p>
@@ -2343,7 +2518,7 @@ function api(path, { method = 'GET', body } = {}) {
 }
 
 function modeFor(reason) {
-  if (reason === 'locked' || reason === 'unset' || reason === 'throttled') return reason;
+  if (reason === 'locked' || reason === 'throttled') return reason;
   return 'device';
 }
 

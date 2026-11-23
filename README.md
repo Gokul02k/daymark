@@ -32,28 +32,31 @@
 | **Daily notes** | In Settings, under Daily reminders, add one or more times. Daymark sends a notification at each time, naming the habits and tasks still open that day. It arrives while Daymark is open. With the closed-app setup below, it can also arrive at those times when Daymark is closed. |
 | **Home** | Habits sit in one compact card, a line each, with the streak and the last 7 days as dots. Priority tasks, and tasks due today or tomorrow, come next so they stay in view. The rest of the list follows. |
 | **Activity** | Switch to Activity to log things you did that aren't tasks, like "Gym 1 hour". Today opens with bars for habits checked and tasks finished. Under that, each of the last 7 days is one column: the number on top is the total, and the column stacks tasks finished on time, tasks finished late, habits checked, and things you logged. Below the chart, each day lists what you logged, the habits you checked, the tasks you added, and the tasks you finished. |
-| **Companion** | The little face at the top smiles when you finish things on time, beams when today's habits are done and nothing due is left, and looks sad while a task is overdue. It reacts when you add, edit, check, or delete a task, a step, a habit, or a list. Tap it to play, tap it fast to make it dizzy, or drag it around and let go. Each character sounds like itself: the robot beeps and computes, the cat meows, trills, and purrs, the puppy barks, yips, and whimpers, the bunny thumps, squeaks, and nibbles, the panda bleats and munches, and the pig oinks, snorts, and squeals. In Settings, pick a Robot, Cat, Puppy, Bunny, Panda, or Pig, make it a girl (with a bow) or a boy (with a bow tie), give it a name, and tell it yours so it greets you by name. These choices follow you to every synced device. |
-| **Settings** | The gear at the top opens Settings: the companion, its cute sounds (on or off for this device), the theme, and your daily reminder times. The bar with the companion and the gear stays at the top while you scroll. |
+| **Companion** | The little face at the top smiles when you finish things on time, beams when today's habits are done and nothing due is left, and looks sad while a task is overdue. It reacts when you add, edit, check, or delete a task, a step, a habit, or a list. Tap it to play, tap it fast to make it dizzy, or drag it around and let go. Fling it and it does a flip. Hold it still to pet it, rub it back and forth to tickle it, boop its nose to make it sneeze, or tap its ears (or the robot's antenna). Leave it alone for a while and it yawns and dozes off until you tap it awake, and while it waits it sometimes winks or sticks its tongue out. The animals use real recordings (credits in `public/sounds/CREDITS.md`): the cat meows, trills, and purrs, the puppy barks, yips, pants, and whines, the pig oinks, grunts, and squeals, and the panda and bunny make their own little noises. The robot beeps and computes. In Settings, pick a Robot, Cat, Puppy, Bunny, Panda, or Pig, make it a girl (with a bow) or a boy (with a bow tie), give it a name, and tell it yours so it greets you by name. These choices follow you to every synced device. |
+| **Accounts** | With the shared list set up (below), everyone signs in with their own username and password and gets their own tasks, habits, reminders, and companion. Make an account from the sign-in card. Settings shows who is signed in and has Sign out, which also removes that list from the device. |
+| **Settings** | The gear at the top opens Settings: your account, the companion, its cute sounds (on or off for this device), the theme, and your daily reminder times. The bar with the companion and the gear stays at the top while you scroll. |
 | **Theme** | In Settings, choose Light or Dark. Daymark remembers the choice on this device. |
 | **Install** | Add it to your home screen. It opens like an app, with its own icon. |
 
 ## Sync and reminders on Vercel
 
-Out of the box, each browser keeps its own list. These steps in the Vercel project give every device the same list and send reminders while Daymark is closed:
+Out of the box, each browser keeps its own list. These steps in the Vercel project give everyone an account whose list follows them to every device, and send reminders while Daymark is closed:
 
 1. Open **Storage**, create an **Upstash for Redis** database (the free plan is enough), and connect it to the project. That adds `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
 2. For reminders at the time you pick, also add **Upstash QStash** (free plan) from the same Storage page, or from the Upstash console. The project needs `QSTASH_TOKEN`. Skip this and reminders for a closed Daymark come once a day, around 9 AM.
-3. In **Settings → Environment Variables**, add `DAYMARK_PASSCODE` (4 digits, like `4821`) and `CRON_SECRET` (any long random text).
+3. In **Settings → Environment Variables**, add `DAYMARK_PASSCODE` (the invite code, at least 4 characters, like `4821`) and `CRON_SECRET` (any long random text). The reminder job refuses to run on Vercel without `CRON_SECRET`.
 4. Redeploy.
-5. On each phone or computer, open Daymark and type the 4 digits once. A small blue tick appears next to Daymark. Then turn on **Remind me** for a task and allow notifications. On iPhone, open Daymark from its Home Screen icon first.
+5. On each phone or computer, open Daymark. Tap **Create an account** the first time, pick a username and a password (6 characters or more), and type the invite code. After that, sign in with the username and password. A small blue tick appears next to Daymark. Then turn on **Remind me** for a task and allow notifications. On iPhone, open Daymark from its Home Screen icon first.
 
-The passcode keeps the list private. Without four digits in `DAYMARK_PASSCODE`, a connected database stays shut. Four digits are quick to guess, so after 5 wrong tries from one network Daymark refuses passcodes from there for 15 minutes.
+The invite code is only for making accounts, so share it with the people you want on this Daymark. Without it set, a connected database refuses new accounts (people who already have one can still sign in). Passwords are stored as salted scrypt hashes. After 5 wrong tries from one network, Daymark refuses sign-ins and sign-ups from there for 15 minutes.
 
-The device doesn't keep the passcode. Typing it gets that device a pass that runs out after 24 hours, and then Daymark asks for the 4 digits again. Set `DAYMARK_UNLOCK_HOURS` to change how long the pass lasts, or to `0` to ask every time Daymark is opened. While it is locked, the list still works on that device and syncs once you unlock. Changing `DAYMARK_PASSCODE` signs every device out.
+Signing in gets that device a pass that runs out after 30 days, and then Daymark asks to sign in again. Set `DAYMARK_UNLOCK_HOURS` to change how long the pass lasts, or to `0` to ask every time Daymark is opened. While the pass has run out, the last list still works on that device and syncs once you sign in again. Each phone gets reminders for whoever signed in on it last.
+
+The first account made takes over the list from before accounts existed, so upgrading from the 4-digit passcode keeps your tasks: make your account first.
 
 Once a device is signed up, the note under **Remind me** says whether the reminder will arrive at its time while Daymark is closed. With QStash, Daymark asks QStash to wake it at each reminder's time, up to 7 days ahead. Further out, it schedules once the day comes within that week. A daily job at 9 AM India time also catches anything missed. That time is in `vercel.json`, in UTC (`30 3 * * *`), and on Vercel's free plan it can run any time within that hour.
 
-On this computer, `npm run dev` keeps the list in `engine/var/board.json`, so every browser on that server shares it. Put `DAYMARK_PASSCODE` in `.env.local` to require the passcode here too.
+On this computer, `npm run dev` keeps each account's list in `engine/var/board-<username>.json`. Anyone can make an account here unless you put `DAYMARK_PASSCODE` in `.env.local` to require the invite code.
 
 ## Run it here
 
@@ -76,9 +79,9 @@ Deploy the repository on Vercel with the Next.js preset. Then open the site in t
 
 ```
 app/            the checklist
-app/api/        sync, reminder sign-up, and the daily reminder job
-public/         icon, manifest, service worker
-tests/          checklist and passcode tests
+app/api/        accounts, sync, reminder sign-up, and the daily reminder job
+public/         icon, manifest, service worker, animal sounds
+tests/          checklist, account, and sound tests
 engine/         optional local command line and SQLite store
 docs/           the picture at the top of this page
 ```

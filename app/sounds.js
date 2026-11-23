@@ -1,6 +1,8 @@
-// Every companion sound is synthesized here with Web Audio, so nothing has to be downloaded.
-// Animal voices run a buzzy source through two band-pass "formant" filters, which is what
-// makes a sweep sound like a vowel ("mee-ow", "oink", "baa").
+// Animals speak with real recordings from public/sounds (see CREDITS.md there). Each clip
+// loads the first time it is wanted, and until it has, or if it can't, the companion uses a
+// voice synthesized here with Web Audio. The robot is always synthesized. Synthesized animal
+// voices run a buzzy source through two band-pass "formant" filters, which is what makes a
+// sweep sound like a vowel ("mee-ow", "oink", "baa").
 
 const CUES = {
   add: 'wow',
@@ -25,6 +27,15 @@ const CUES = {
   dizzy: 'dizzy',
   boing: 'boing',
   wheee: 'wheee',
+  pet: 'pet',
+  tickle: 'laugh',
+  achoo: 'achoo',
+  sneeze: 'sneeze',
+  ears: 'huh',
+  yawn: 'yawn',
+  snore: 'snore',
+  wake: 'wow',
+  love: 'cheer',
 };
 
 let context = null;
@@ -79,6 +90,7 @@ function later(ac, offset) {
     createGain: () => ac.createGain(),
     createBiquadFilter: () => ac.createBiquadFilter(),
     createBufferSource: () => ac.createBufferSource(),
+    createDynamicsCompressor: () => ac.createDynamicsCompressor(),
   };
 }
 
@@ -310,6 +322,11 @@ const VOICES = {
       tone(ac, 0.28, { wave: 'square', pitch: [[0, 440], [0.4, 300]], length: 0.4, peak: 0.1, lowpass: 1600, vibrato: { rate: 7, depth: 12 } });
     },
     giggle: (ac) => [990, 1180, 880].forEach((pitch, index) => beep(ac, index * 0.065, pitch, 0.05)),
+    pet: (ac) => {
+      tone(ac, 0, { pitch: [[0, 330], [1, 392]], length: 1, peak: 0.08, attack: 0.2, release: 0.3, vibrato: { rate: 5, depth: 6 } });
+      tone(ac, 0, { pitch: [[0, 495], [1, 588]], length: 1, peak: 0.05, attack: 0.25, release: 0.3 });
+    },
+    laugh: (ac) => [880, 990, 880, 1110, 990, 1320].forEach((pitch, index) => beep(ac, index * 0.07, pitch, 0.045, 0.09)),
   },
   cat: {
     happy: (ac) => meow(ac, 0),
@@ -325,6 +342,8 @@ const VOICES = {
       trill(ac, 0, 0.14);
       meow(ac, 0.16, { high: 950, length: 0.2 });
     },
+    pet: (ac) => purr(ac, 0, 1.4),
+    laugh: (ac) => [0, 0.13, 0.26].forEach((at, index) => meow(ac, at, { high: 980 + index * 60, length: 0.11 })),
   },
   puppy: {
     happy: (ac) => bark(ac, 0),
@@ -356,6 +375,8 @@ const VOICES = {
       bark(ac, 0, { pitch: 900, length: 0.09, peak: 0.5 });
       bark(ac, 0.12, { pitch: 1000, length: 0.08, peak: 0.5 });
     },
+    pet: (ac) => [0, 0.16, 0.32, 0.48, 0.64].forEach((at) => hiss(ac, at, { freq: 1500, q: 1.2, length: 0.1, peak: 0.16, attack: 0.02 })),
+    laugh: (ac) => [0, 0.11, 0.22, 0.33].forEach((at, index) => bark(ac, at, { pitch: 850 + index * 50, length: 0.07, peak: 0.45 })),
   },
   bunny: {
     happy: (ac) => {
@@ -378,6 +399,8 @@ const VOICES = {
       squeak(ac, 0, 1600, 2200, 0.06);
       squeak(ac, 0.09, 1700, 2300, 0.06);
     },
+    pet: (ac) => Array.from({ length: 9 }, (_, index) => crunch(ac, index * 0.09, 2600, 0.02)),
+    laugh: (ac) => [0, 0.08, 0.16, 0.24, 0.32].forEach((at, index) => squeak(ac, at, 1600 + index * 80, 2300, 0.05)),
   },
   panda: {
     happy: (ac) => bleat(ac, 0),
@@ -393,6 +416,11 @@ const VOICES = {
       bleat(ac, 0, { pitch: 560, length: 0.14 });
       bleat(ac, 0.17, { pitch: 600, length: 0.12 });
     },
+    pet: (ac) => {
+      [0, 0.15, 0.3, 0.45].forEach((at) => crunch(ac, at, 1500, 0.04));
+      bleat(ac, 0.6, { pitch: 380, length: 0.3, rate: 7 });
+    },
+    laugh: (ac) => [0, 0.13, 0.26].forEach((at, index) => bleat(ac, at, { pitch: 560 + index * 40, length: 0.1 })),
   },
   pig: {
     happy: (ac) => oink(ac, 0),
@@ -413,26 +441,211 @@ const VOICES = {
       snort(ac, 0.11);
       oink(ac, 0.22, { pitch: 230, length: 0.14 });
     },
+    pet: (ac) => [0, 0.3, 0.6].forEach((at) => oink(ac, at, { pitch: 120, length: 0.2, peak: 0.45 })),
+    laugh: (ac) => {
+      [0, 0.1, 0.2].forEach((at) => snort(ac, at));
+      oink(ac, 0.32, { pitch: 240, length: 0.12 });
+      oink(ac, 0.46, { pitch: 260, length: 0.12 });
+    },
   },
 };
+
+function purr(ac, at, length) {
+  hiss(ac, at, { type: 'lowpass', freq: 380, q: 0.8, length, peak: 0.4, attack: 0.08, release: 0.2, tremolo: { rate: 24, depth: 0.9 } });
+}
 
 const SHARED = {
   boing: (ac) => tone(ac, 0, { wave: 'triangle', pitch: [[0, 240], [0.12, 560], [0.32, 300]], length: 0.32, peak: 0.2, vibrato: { rate: 18, depth: 25 } }),
   wheee: (ac) => tone(ac, 0, { pitch: [[0, 600], [0.35, 1400]], length: 0.35, peak: 0.12, attack: 0.03 }),
   dizzy: (ac) => tone(ac, 0, { wave: 'triangle', pitch: [[0, 820], [0.6, 440]], length: 0.6, peak: 0.16, vibrato: { rate: 9, depth: 90 } }),
+  achoo: (ac) => {
+    hiss(ac, 0, { freq: [[0, 900], [0.5, 1500]], q: 1.4, length: 0.22, peak: 0.12, attack: 0.08 });
+    hiss(ac, 0.3, { freq: [[0, 1000], [0.3, 1800]], q: 1.4, length: 0.28, peak: 0.16, attack: 0.1 });
+  },
+  sneeze: (ac) => {
+    hiss(ac, 0, { type: 'highpass', freq: 2200, q: 0.7, length: 0.2, peak: 0.5, attack: 0.004, release: 0.15 });
+    voice(ac, 0.02, { pitch: [[0, 420], [0.18, 260]], f1: 380, f2: 900, length: 0.18, attack: 0.005, peak: 0.35 });
+  },
+  yawn: (ac) =>
+    voice(ac, 0, {
+      pitch: [[0, 340], [0.35, 420], [1.1, 210]],
+      f1: [[0, 500], [0.4, 850], [1.1, 420]],
+      f2: [[0, 1300], [0.4, 1250], [1.1, 800]],
+      length: 1.1,
+      attack: 0.12,
+      release: 0.3,
+      peak: 0.4,
+    }),
+  snore: (ac) => {
+    hiss(ac, 0, { type: 'lowpass', freq: 320, q: 1, length: 0.9, peak: 0.22, attack: 0.25, release: 0.3, tremolo: { rate: 32, depth: 0.8 } });
+    tone(ac, 1.05, { pitch: [[0, 900], [0.45, 1250]], length: 0.45, peak: 0.05, attack: 0.15, release: 0.2 });
+  },
 };
 
-/** Schedules the sound on `ac`. Exported so tests can run it against a fake context. */
-export function scheduleBuddySound(ac, kind, cue) {
-  const mood = CUES[cue] || cue;
-  if (SHARED[mood]) {
-    SHARED[mood](ac);
-    return true;
+// Real recordings, as files under public/sounds without ".mp3". Each mood lists a few takes;
+// one is picked at random. A take is one clip, or several as [file, seconds later, speed].
+// Moods missing here (and the robot) use the synthesized voices above.
+const SAMPLES = {
+  cat: {
+    happy: ['cat/meow', 'cat/meow-short'],
+    cheer: [[['cat/meow-short'], ['cat/meow', 0.28]]],
+    wow: ['cat/meow-ask', [['cat/meow-short', 0, 1.15]]],
+    think: ['cat/purr'],
+    huh: ['cat/meow-ask'],
+    sad: ['cat/meow-sad'],
+    giggle: [[['cat/meow-short', 0, 1.2], ['cat/meow-short', 0.22, 1.1]], 'cat/meow-short'],
+    pet: ['cat/purr'],
+    laugh: [[['cat/meow-short', 0, 1.15], ['cat/meow-short', 0.16, 1.25], ['cat/meow-short', 0.32, 1.35]]],
+    yawn: [[['cat/meow-sad', 0, 0.8]]],
+  },
+  puppy: {
+    happy: ['puppy/bark', 'puppy/yip'],
+    cheer: ['puppy/bark-double', [['puppy/bark'], ['puppy/yip', 0.25]]],
+    wow: ['puppy/yip'],
+    huh: [[['puppy/whine', 0, 1.15]], 'puppy/yip'],
+    sad: ['puppy/whine'],
+    giggle: [[['puppy/yip'], ['puppy/yip', 0.14, 1.1]]],
+    laugh: [[['puppy/yip', 0, 1.1], ['puppy/yip', 0.13, 1.2], ['puppy/yip', 0.26, 1.3]], 'puppy/bark-double'],
+  },
+  pig: {
+    happy: ['pig/oink'],
+    cheer: ['pig/oink-double', [['pig/oink'], ['pig/squeal', 0.3]]],
+    wow: [[['pig/oink', 0, 1.15]], 'pig/squeal'],
+    think: ['pig/grunt'],
+    huh: [[['pig/oink', 0, 1.2]]],
+    sad: [[['pig/grunt', 0, 0.85]]],
+    giggle: [[['pig/grunt', 0, 1.2], ['pig/oink', 0.2, 1.15]], 'pig/oink-double'],
+    pet: [[['pig/grunt'], ['pig/grunt', 0.45, 0.95]]],
+    laugh: [[['pig/oink', 0, 1.2], ['pig/oink', 0.18, 1.3], ['pig/squeal', 0.36]]],
+  },
+  panda: {
+    happy: ['panda/bleat', 'panda/chirp'],
+    cheer: [[['panda/chirp'], ['panda/bleat', 0.25]]],
+    wow: ['panda/chirp'],
+    think: ['panda/munch'],
+    huh: [[['panda/chirp', 0, 1.1]]],
+    sad: [[['panda/bleat', 0, 0.85]]],
+    giggle: [[['panda/chirp', 0, 1.1], ['panda/chirp', 0.18, 1.2]]],
+    pet: ['panda/munch'],
+    laugh: [[['panda/chirp', 0, 1.15], ['panda/chirp', 0.15, 1.25], ['panda/chirp', 0.3, 1.35]]],
+  },
+  bunny: {
+    wow: ['bunny/squeak'],
+    think: ['bunny/munch'],
+    huh: [[['bunny/squeak', 0, 1.1]]],
+    sad: [[['bunny/squeak', 0, 0.8]]],
+    giggle: [[['bunny/squeak', 0, 1.1], ['bunny/squeak', 0.12, 1.2]]],
+    pet: ['bunny/munch'],
+    laugh: [[['bunny/squeak', 0, 1.1], ['bunny/squeak', 0.1, 1.2], ['bunny/squeak', 0.2, 1.3]]],
+  },
+};
+
+/** Every clip a take points to, as a list of { file, at, rate }. */
+function takeClips(take) {
+  if (typeof take === 'string') return [{ file: take, at: 0, rate: 1 }];
+  return take.map(([file, at = 0, rate = 1]) => ({ file, at, rate }));
+}
+
+/** Every recording the companions use, for preloading and for the tests. */
+export function sampleFiles(kind) {
+  const kinds = kind ? [kind] : Object.keys(SAMPLES);
+  const files = new Set();
+  for (const name of kinds) {
+    for (const takes of Object.values(SAMPLES[name] || {})) {
+      for (const take of takes) for (const clip of takeClips(take)) files.add(clip.file);
+    }
   }
+  return [...files].sort();
+}
+
+// file -> AudioBuffer, or a promise while loading, or null when it couldn't be had.
+const clips = new Map();
+
+function decoder() {
+  const Offline = typeof window !== 'undefined' && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
+  return Offline ? new Offline(1, 1, 44100) : audio();
+}
+
+function loadClip(file) {
+  if (clips.has(file)) return clips.get(file);
+  const loading = fetch(`/sounds/${file}.mp3`)
+    .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(String(res.status)))))
+    .then(
+      (data) =>
+        new Promise((resolve, reject) => {
+          const ctx = decoder();
+          if (!ctx) return reject(new Error('no audio'));
+          const done = ctx.decodeAudioData(data, resolve, reject);
+          if (done?.then) done.then(resolve, reject);
+        }),
+    )
+    .then((buffer) => {
+      clips.set(file, buffer);
+      return buffer;
+    })
+    .catch(() => {
+      clips.set(file, null);
+      return null;
+    });
+  clips.set(file, loading);
+  return loading;
+}
+
+/** Starts fetching a companion's recordings, so its first sound is already the real one. */
+export function preloadBuddySounds(kind) {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
+  for (const file of sampleFiles(kind)) loadClip(file);
+}
+
+function ready(file) {
+  const value = clips.get(file);
+  return value && typeof value.then !== 'function' ? value : null;
+}
+
+/** Plays one take of recordings `offset` seconds from now. False if any clip isn't loaded. */
+export function scheduleSamples(ac, take, offset = 0, lookup = ready) {
+  const parts = takeClips(take);
+  const buffers = parts.map((part) => lookup(part.file));
+  if (buffers.some((buffer) => !buffer)) return false;
+  const jitter = 0.94 + Math.random() * 0.12;
+  parts.forEach((part, index) => {
+    const source = ac.createBufferSource();
+    source.buffer = buffers[index];
+    source.playbackRate.value = part.rate * jitter;
+    const level = ac.createGain();
+    level.gain.value = 0.9;
+    source.connect(level);
+    level.connect(out(ac));
+    source.start(ac.currentTime + 0.02 + offset + part.at);
+  });
+  return true;
+}
+
+/** A recording for this mood if one is loaded; otherwise starts loading it and says false. */
+function playRecording(ac, kind, mood, offset = 0) {
+  const takes = SAMPLES[kind]?.[mood];
+  if (!takes || takes.length === 0) return false;
+  const take = takes[Math.floor(Math.random() * takes.length)];
+  if (scheduleSamples(ac, take, offset)) return true;
+  for (const clip of takeClips(take)) loadClip(clip.file);
+  return false;
+}
+
+/**
+ * Schedules the sound on `ac`, using a loaded recording when `recordings` is on.
+ * Exported so tests can run the synthesized voices against a fake context.
+ */
+export function scheduleBuddySound(ac, kind, cue, { recordings = false } = {}) {
+  const mood = CUES[cue] || cue;
   const sounds = VOICES[kind] || VOICES.robot;
   if (mood === 'phew') {
     hiss(ac, 0, { type: 'lowpass', freq: [[0, 1200], [0.45, 450]], q: 0.7, length: 0.45, peak: 0.22, attack: 0.1, release: 0.2 });
-    sounds.happy(later(ac, 0.45));
+    if (!(recordings && playRecording(ac, kind, 'happy', 0.45))) sounds.happy(later(ac, 0.45));
+    return true;
+  }
+  if (recordings && playRecording(ac, kind, mood)) return true;
+  if (SHARED[mood]) {
+    SHARED[mood](ac);
     return true;
   }
   if (!sounds[mood]) return false;
@@ -445,6 +658,6 @@ export function playBuddySound(kind, cue) {
   const ac = audio();
   if (!ac) return;
   try {
-    scheduleBuddySound(ac, kind, cue);
+    scheduleBuddySound(ac, kind, cue, { recordings: true });
   } catch {}
 }

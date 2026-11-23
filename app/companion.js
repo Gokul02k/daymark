@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { playBuddySound } from './sounds';
+import { playBuddySound, preloadBuddySounds } from './sounds';
 
 export const KIND_LABELS = { robot: 'Robot', cat: 'Cat', puppy: 'Puppy', bunny: 'Bunny', panda: 'Panda', pig: 'Pig' };
 export const STYLE_LABELS = { plain: 'Plain', girl: 'Girl', boy: 'Boy' };
@@ -30,6 +30,17 @@ const FACES = {
   giggle: { eyes: 'happy', mouth: 'open', cheeks: true },
   dizzy: { eyes: 'dizzy', mouth: 'wavy' },
   wheee: { eyes: 'wide', mouth: 'open', cheeks: true },
+  pet: { eyes: 'happy', mouth: 'smile', cheeks: true },
+  laugh: { eyes: 'squeeze', mouth: 'laugh', cheeks: true },
+  achoo: { eyes: 'droop', mouth: 'o', look: [0, -1.2] },
+  sneeze: { eyes: 'squeeze', mouth: 'open' },
+  yawn: { eyes: 'closed', mouth: 'yawn' },
+  sleep: { eyes: 'closed', mouth: 'small', zzz: true },
+  startled: { eyes: 'wide', mouth: 'o', brow: true },
+  love: { eyes: 'heart', mouth: 'grin', cheeks: true },
+  wink: { eyes: 'wink', mouth: 'tongue', cheeks: true },
+  blep: { eyes: 'open', mouth: 'blep' },
+  sideeye: { eyes: 'open', mouth: 'smirk', look: [2.2, 0] },
 };
 
 const REACTIONS = {
@@ -54,7 +65,40 @@ const REACTIONS = {
   boing: { face: 'giggle', anim: 'hop', say: ['Boing!', 'Again!', 'Wheee!'] },
   meet: { face: 'joy', anim: 'hop', burst: 'heart', say: ['Nice to meet you, {name}!', "Hi {name}, I'm {pet}!"] },
   newlook: { face: 'wow', anim: 'spin', burst: 'spark', say: ['How do I look?', "I'm {pet} now!", 'New me!'] },
+  pet: { face: 'pet', anim: 'purr', burst: 'heart', ms: 2300, say: ['Ahh, so nice…', 'More pets please!', 'Love you, {name}!'] },
+  tickle: { face: 'laugh', anim: 'shake', ms: 2000, say: ['Hahaha, stop!', 'That tickles!!', 'Hehehe, no fair!'] },
+  achoo: { face: 'achoo', anim: 'windup', ms: 650, say: ['Ah… ah…'] },
+  sneeze: { face: 'sneeze', anim: 'sneeze', burst: 'drop', ms: 1500, say: ['ACHOO!', 'Ah-CHOO!', 'Bless me!'] },
+  ears: { face: 'huh', anim: 'wiggle', say: ['Hey, my ears!', 'Ears are ticklish!', 'Not the ears, {name}!'] },
+  fling: { face: 'wheee', anim: 'flip', burst: 'spark', say: ['Wheeee!', 'I can fly!', 'Do it again!'] },
+  yawn: { face: 'yawn', anim: 'stretch', ms: 1700, say: ['*yaaawn*', 'So sleepy…'] },
+  wake: { face: 'startled', anim: 'jump', say: ["Huh?! I'm awake!", "I wasn't sleeping!", 'Five more minutes…'] },
+  love: { face: 'love', anim: 'hop', burst: 'heart', say: ['I love you, {name}!', 'Best friends!', 'You are the best!'] },
+  wink: { face: 'wink', anim: 'idle', ms: 1100, say: [] },
+  blep: { face: 'blep', anim: 'idle', ms: 1400, say: [] },
+  sideeye: { face: 'sideeye', anim: 'idle', ms: 1300, say: [] },
 };
+
+const KIND_PETS = {
+  robot: ['Affection detected!', 'Happy circuits!'],
+  cat: ['Purrrr…', 'Right behind the ears…'],
+  puppy: ['*tail wag*', 'Good human!'],
+  bunny: ['*happy binky*', 'So soft!'],
+  panda: ['So cozy…', 'Snuggle time!'],
+  pig: ['Happy oinks!', 'Belly rubs next?'],
+};
+
+const KIND_EARS = {
+  robot: ['My antenna!', 'Antenna boop!', 'Signal lost!'],
+};
+
+const KIND_SNEEZES = {
+  robot: ['ACHOO.exe!', 'Dust in my circuits!'],
+  pig: ['ACHOO! *snort*'],
+};
+
+const SLEEP_AFTER_MS = 45 * 1000;
+const QUIRKS = ['wink', 'blep', 'sideeye'];
 
 const HELLO = {
   sad: { face: 'sad', anim: 'tilt', say: ["Something's overdue…", "{name}, something's overdue…"] },
@@ -90,6 +134,7 @@ function pick(list) {
 }
 
 function speak(list, names, preferName) {
+  if (list.length === 0) return '';
   const named = list.filter((text) => text.includes('{name}'));
   const plain = list.filter((text) => !text.includes('{name}'));
   let pool = names.user ? list : plain;
@@ -107,26 +152,75 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
   const [look, setLook] = useState([0, 0]);
   const [drag, setDrag] = useState(null);
   const [home, setHome] = useState(false);
+  const [asleep, setAsleep] = useState(false);
+  const [tickled, setTickled] = useState(false);
   const ref = useRef(null);
   const timer = useRef(0);
   const homeTimer = useRef(0);
   const pokes = useRef([]);
   const press = useRef(null);
   const skipClick = useRef(false);
-  const latest = useRef({ mood, names, kind, sound });
-  latest.current = { mood, names, kind, sound };
+  const lastActive = useRef(Date.now());
+  const busy = useRef(false);
+  const sneezeTimer = useRef(0);
+  const napTimer = useRef(0);
+  const latest = useRef({ mood, names, kind, sound, asleep });
+  latest.current = { mood, names, kind, sound, asleep };
 
   function show(spec, { lines, preferName, voice } = {}) {
     clearTimeout(timer.current);
+    if (spec !== REACTIONS.yawn) clearTimeout(napTimer.current);
+    lastActive.current = Date.now();
+    busy.current = true;
     const say = speak(lines || spec.say, latest.current.names, preferName);
     setReaction({ ...spec, say, key: Math.random() });
-    timer.current = setTimeout(() => setReaction(null), spec.ms || 1900);
+    timer.current = setTimeout(() => {
+      busy.current = false;
+      setReaction(null);
+    }, spec.ms || 1900);
     if (voice && latest.current.sound) playBuddySound(latest.current.kind, voice);
   }
 
+  function kindLines(spec, extra) {
+    return [...spec.say, ...(extra[latest.current.kind] || [])];
+  }
+
   useEffect(() => {
-    if (cue && REACTIONS[cue.type]) show(REACTIONS[cue.type], { preferName: cue.type === 'meet', voice: cue.type });
+    if (sound) preloadBuddySounds(kind);
+  }, [sound, kind]);
+
+  useEffect(() => {
+    if (!cue || !REACTIONS[cue.type]) return;
+    setAsleep(false);
+    show(REACTIONS[cue.type], { preferName: cue.type === 'meet', voice: cue.type });
   }, [cue]);
+
+  // Left alone, it yawns and dozes off. Awake and idle, it pulls the odd face.
+  useEffect(() => {
+    const tick = setInterval(() => {
+      if (document.visibilityState !== 'visible' || busy.current || press.current || latest.current.asleep) return;
+      const idle = Date.now() - lastActive.current;
+      if (idle > SLEEP_AFTER_MS) {
+        show(REACTIONS.yawn, { voice: 'yawn' });
+        napTimer.current = setTimeout(() => {
+          setAsleep(true);
+          if (latest.current.sound) playBuddySound(latest.current.kind, 'snore');
+        }, REACTIONS.yawn.ms);
+        return;
+      }
+      if (idle > 8000 && Math.random() < 0.18) show(REACTIONS[pick(QUIRKS)]);
+    }, 5000);
+    const wake = () => {
+      lastActive.current = Date.now();
+    };
+    window.addEventListener('pointerdown', wake, { passive: true });
+    window.addEventListener('keydown', wake);
+    return () => {
+      clearInterval(tick);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', wake);
+    };
+  }, []);
 
   useEffect(() => {
     const hello = setTimeout(() => show(HELLO[latest.current.mood] || HELLO.okay, { preferName: true }), 600);
@@ -134,6 +228,9 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
       clearTimeout(hello);
       clearTimeout(timer.current);
       clearTimeout(homeTimer.current);
+      clearTimeout(sneezeTimer.current);
+      clearTimeout(napTimer.current);
+      clearTimeout(press.current?.hold);
     };
   }, []);
 
@@ -181,7 +278,15 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
 
   function onPointerDown(event) {
     if (event.button != null && event.button !== 0) return;
-    press.current = { x: event.clientX, y: event.clientY, moved: false };
+    const held = { x: event.clientX, y: event.clientY, moved: false, petting: false, turns: 0, dir: 0, lastX: event.clientX, trail: [] };
+    // Holding still for a moment is a pet.
+    held.hold = setTimeout(() => {
+      if (press.current !== held || held.moved) return;
+      held.petting = true;
+      setAsleep(false);
+      show(REACTIONS.pet, { lines: kindLines(REACTIONS.pet, KIND_PETS), voice: 'pet' });
+    }, 550);
+    press.current = held;
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {}
@@ -193,33 +298,98 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
     const dx = event.clientX - held.x;
     const dy = event.clientY - held.y;
     if (!held.moved && Math.hypot(dx, dy) < 6) return;
+    const now = performance.now();
+    held.trail = [...held.trail.filter(([at]) => now - at < 90), [now, event.clientX, event.clientY]];
+    // Rubbing quickly back and forth is a tickle.
+    const step = event.clientX - held.lastX;
+    if (Math.abs(step) > 5) {
+      const dir = Math.sign(step);
+      if (held.dir && dir !== held.dir) held.turns += 1;
+      held.dir = dir;
+      held.lastX = event.clientX;
+      if (held.turns >= 4 && !held.tickled) {
+        held.tickled = true;
+        setTickled(true);
+        if (latest.current.sound) playBuddySound(latest.current.kind, 'tickle');
+      }
+    }
     if (!held.moved) {
       held.moved = true;
+      clearTimeout(held.hold);
       clearTimeout(timer.current);
       clearTimeout(homeTimer.current);
+      busy.current = true;
+      setAsleep(false);
       setReaction(null);
       setHome(false);
-      if (latest.current.sound) playBuddySound(latest.current.kind, 'wheee');
+      if (latest.current.sound && !held.petting) playBuddySound(latest.current.kind, 'wheee');
     }
     setDrag({ x: dx, y: dy });
   }
 
-  function onPointerUp() {
+  function onPointerUp(event) {
     const held = press.current;
     press.current = null;
-    if (!held?.moved) return;
+    if (!held) return;
+    clearTimeout(held.hold);
+    if (held.petting && !held.moved) {
+      skipClickFor(350);
+      return;
+    }
+    if (!held.moved) return;
+    skipClickFor(350);
+    setDrag(null);
+    setTickled(false);
+    setHome(true);
+    homeTimer.current = setTimeout(() => setHome(false), 600);
+    if (held.tickled) {
+      show(REACTIONS.tickle);
+      return;
+    }
+    const first = held.trail[0];
+    const last = held.trail[held.trail.length - 1];
+    const speed = first && last && last[0] > first[0] ? Math.hypot(last[1] - first[1], last[2] - first[2]) / (last[0] - first[0]) : 0;
+    if (event?.type === 'pointerup' && speed > 1.1) show(REACTIONS.fling, { voice: 'boing' });
+    else show(REACTIONS.boing, { voice: 'boing' });
+  }
+
+  function skipClickFor(ms) {
     skipClick.current = true;
     setTimeout(() => {
       skipClick.current = false;
-    }, 350);
-    setDrag(null);
-    setHome(true);
-    homeTimer.current = setTimeout(() => setHome(false), 600);
-    show(REACTIONS.boing, { voice: 'boing' });
+    }, ms);
   }
 
-  function onClick() {
+  /** Where the tap landed on the 64 by 64 face, or null for a keyboard press. */
+  function spotOf(event) {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box || event.detail === 0 || !box.width) return null;
+    return [((event.clientX - box.left) / box.width) * 64, ((event.clientY - box.top) / box.height) * 64];
+  }
+
+  function onClick(event) {
     if (skipClick.current) return;
+    if (latest.current.asleep) {
+      setAsleep(false);
+      show(REACTIONS.wake, { voice: 'wake' });
+      return;
+    }
+    const spot = spotOf(event);
+    const noseY = latest.current.kind === 'pig' ? 39 : 36.5;
+    if (spot && Math.abs(spot[0] - 32) < 6.5 && Math.abs(spot[1] - noseY) < 5) {
+      pokes.current = [];
+      show(REACTIONS.achoo, { voice: 'achoo' });
+      clearTimeout(sneezeTimer.current);
+      sneezeTimer.current = setTimeout(
+        () => show(REACTIONS.sneeze, { lines: kindLines(REACTIONS.sneeze, KIND_SNEEZES), voice: 'sneeze' }),
+        REACTIONS.achoo.ms,
+      );
+      return;
+    }
+    if (spot && spot[1] < 15) {
+      show(REACTIONS.ears, { lines: kindLines(REACTIONS.ears, KIND_EARS), voice: 'ears' });
+      return;
+    }
     const now = Date.now();
     pokes.current = pokes.current.filter((at) => now - at < 2500);
     pokes.current.push(now);
@@ -232,16 +402,22 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
       show(REACTIONS.pokesad, { voice: 'pokesad' });
       return;
     }
+    if (Math.random() < 0.12) {
+      show(REACTIONS.love, { voice: 'love' });
+      return;
+    }
     show(REACTIONS.poke, { lines: [...REACTIONS.poke.say, ...(KIND_POKES[latest.current.kind] || [])], voice: 'poke' });
   }
 
-  const face = FACES[drag ? 'wheee' : reaction?.face || mood] || FACES.okay;
-  const anim = drag ? 'held' : reaction?.anim || 'idle';
-  const say = drag ? 'Wheee!' : reaction?.say;
+  const held = drag ? (tickled ? 'laugh' : 'wheee') : null;
+  const face = FACES[held || reaction?.face || (asleep ? 'sleep' : mood)] || FACES.okay;
+  const anim = drag ? 'held' : reaction?.anim || (asleep ? 'sleep' : 'idle');
+  const say = drag ? (tickled ? 'Hahaha!' : 'Wheee!') : reaction?.say;
   const bodyKey = drag ? 'held' : reaction?.key || 'idle';
   let className = `buddy mood-${mood}`;
   if (drag) className += ' is-held';
   if (home) className += ' is-home';
+  if (asleep && !reaction) className += ' is-asleep';
 
   return (
     <span className="buddy-spot">
@@ -250,7 +426,7 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
         type="button"
         className={className}
         style={drag ? { transform: `translate(${drag.x}px, ${drag.y}px)` } : undefined}
-        aria-label={`${names.pet} the ${KIND_LABELS[kind].toLowerCase()}, feeling ${MOOD_WORDS[mood] || 'calm'}. Tap to play.`}
+        aria-label={`${names.pet} the ${(KIND_LABELS[kind] || 'buddy').toLowerCase()}, ${asleep ? 'asleep' : `feeling ${MOOD_WORDS[mood] || 'calm'}`}. Tap to play, hold to pet, or tap its nose.`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -261,6 +437,13 @@ export default function Buddy({ mood = 'okay', cue, companion, sound = false }) 
           <Face kind={kind} style={style} face={face} look={face.look || look} shut={shut} />
         </span>
         {reaction?.burst && !drag ? <Burst key={`b${reaction.key}`} kind={reaction.burst} /> : null}
+        {face.zzz ? (
+          <span className="buddy-zzz" aria-hidden="true">
+            <span>z</span>
+            <span>z</span>
+            <span>Z</span>
+          </span>
+        ) : null}
         {say ? (
           <span key={`s${bodyKey}`} className="buddy-say" aria-hidden="true">
             {say}
@@ -423,6 +606,19 @@ function Nose({ kind }) {
 
 function Eye({ kind, cx, side }) {
   const cy = 31;
+  if (kind === 'wink') return <Eye kind={side === 'left' ? 'happy' : 'open'} cx={cx} side={side} />;
+  if (kind === 'heart') {
+    return (
+      <path
+        d={`M${cx} ${cy + 4} l-4.2 -4.1 a2.5 2.5 0 0 1 4.2 -3.3 a2.5 2.5 0 0 1 4.2 3.3 z`}
+        className="e-heart"
+      />
+    );
+  }
+  if (kind === 'squeeze') {
+    const d = side === 'left' ? 1 : -1;
+    return <path d={`M${cx - 3.4 * d} ${cy - 3.2} L${cx + 3 * d} ${cy} L${cx - 3.4 * d} ${cy + 3.2}`} className="e-line" />;
+  }
   if (kind === 'happy') {
     return <path d={`M${cx - 4.2} ${cy + 1.6} Q${cx} ${cy - 4} ${cx + 4.2} ${cy + 1.6}`} className="e-line" />;
   }
@@ -463,6 +659,31 @@ function Mouth({ kind }) {
   if (kind === 'open') return <ellipse cx="32" cy="41" rx="4.6" ry="3.7" className="m-fill" />;
   if (kind === 'wavy') return <path d="M25.5 41.5 q1.6 -2 3.25 0 t3.25 0 t3.25 0 t3.25 0" className="m-line" />;
   if (kind === 'smirk') return <path d="M27 42.5 Q33 42 38 39" className="m-line" />;
+  if (kind === 'laugh') {
+    return (
+      <>
+        <path d="M23.5 38.2 Q32 50 40.5 38.2 Z" className="m-fill" />
+        <path d="M28.2 44.6 Q32 41.8 35.8 44.6 Q32 47.6 28.2 44.6 Z" className="m-tongue" />
+      </>
+    );
+  }
+  if (kind === 'yawn') return <ellipse cx="32" cy="42" rx="3.8" ry="5.4" className="m-fill" />;
+  if (kind === 'tongue') {
+    return (
+      <>
+        <path d="M33.6 41.6 q0.4 5 3 4.6 q2.6 -0.4 1.8 -5.4 Z" className="m-tongue" />
+        <path d="M25 39.5 Q32 45 39 39.5" className="m-line" />
+      </>
+    );
+  }
+  if (kind === 'blep') {
+    return (
+      <>
+        <path d="M30.2 41.4 q0 3.6 1.8 3.6 q1.8 0 1.8 -3.6 Z" className="m-tongue" />
+        <path d="M27.5 41.5 h9" className="m-line" />
+      </>
+    );
+  }
   return <path d="M27 41.5 h10" className="m-line" />;
 }
 
@@ -478,6 +699,8 @@ function Burst({ kind }) {
           <svg viewBox="0 0 12 12">
             {kind === 'heart' ? (
               <path d="M6 10.6 1.7 6.3a2.6 2.6 0 0 1 4.3-3.5 2.6 2.6 0 0 1 4.3 3.5z" />
+            ) : kind === 'drop' ? (
+              <circle cx="6" cy="6" r="3.2" />
             ) : (
               <path d="M6 0l1.3 4.7L12 6l-4.7 1.3L6 12 4.7 7.3 0 6l4.7-1.3z" />
             )}
