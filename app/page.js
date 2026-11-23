@@ -1640,6 +1640,12 @@ function SignInCard({ form, known, signup, hint, throttled, onChange, onSubmit, 
         </label>
       ) : null}
       {hint ? <p className="hint tight">{hint}</p> : null}
+      {signup === 'closed' && !hint ? (
+        <p className="hint tight">
+          New accounts are off on this server. Set DAYMARK_PASSCODE (your invite code) in the hosting settings and
+          redeploy to make the first one. Your old list is safe and comes back with the first account.
+        </p>
+      ) : null}
       <div className="signin-actions">
         <button type="submit" className="primary" disabled={!ready || form.busy || throttled}>
           {form.busy ? 'One moment…' : creating ? 'Create account' : 'Sign in'}
